@@ -1,0 +1,15 @@
+name: pypi
+on:
+  push:
+    tags: "v*"
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: build-and-test
+        uses: ./.github/actions/build-and-test
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
