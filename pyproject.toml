@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "aws-lambda-api-event-utils"
+version = "0.1.0"  # update here and aws_lambda_api_event_utils.py
+description = "Lightweight processing of API events for AWS Lambda"
+authors = ["Ben Kehoe <ben@kehoe.io>"]
+license = "Apache-2.0"
+readme = "README.md"
+homepage = "https://github.com/benkehoe/aws-lambda-api-event-utils"
+repository = "https://github.com/benkehoe/aws-lambda-api-event-utils"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Topic :: Utilities"
+]
+
+[tool.poetry.dependencies]
+python = "^3.7"
+jsonschema = {version = "^4.2.1", extras = ["jsonschema"]}
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.2.5"
+black = "^21.12b0"
+requests = "^2.26.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
