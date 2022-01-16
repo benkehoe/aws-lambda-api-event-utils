@@ -36,7 +36,7 @@ from typing import (
     NoReturn,
 )
 
-__version__ = "0.1.0"  # update here and pyproject.toml
+__version__ = "0.2.0"  # update here and pyproject.toml
 
 __all__ = (
     "api_event_handler",
