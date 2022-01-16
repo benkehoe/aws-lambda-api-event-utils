@@ -217,6 +217,8 @@ class UnsupportedMethodError(APIErrorResponse):
         The allowed methods are in the response headers anyway,
         as required by RFC7231.
         """
+        if "error_message" in self.kwargs:
+            return self.kwargs["error_message"]
         return f"{self.event_method} is not a valid HTTP method. Valid methods are {' '.join(self.valid_methods)}"
 
     def get_headers(
@@ -622,6 +624,8 @@ class HeaderError(APIErrorResponse):
     ERROR_CODE = "InvalidRequest"
 
     def get_error_message(self):
+        if "error_message" in self.kwargs:
+            return self.kwargs["error_message"]
         bad_headers = set()
         if self.bad_keys:
             bad_headers.update(self.bad_keys)
@@ -778,6 +782,8 @@ class ContentTypeError(APIErrorResponse):
     ERROR_CODE = "InvalidContentType"
 
     def get_error_message(self) -> str:
+        if "error_message" in self.kwargs:
+            return self.kwargs["error_message"]
         if len(self.valid_content_types) == 1:
             return f"Content type must be {self.valid_content_types[0]}."
         return f"Content type must be one of: {', '.join(self.valid_content_types)}."
@@ -888,6 +894,8 @@ class QueryParameterError(APIErrorResponse):
     ERROR_CODE = "InvalidRequest"
 
     def get_error_message(self):
+        if "error_message" in self.kwargs:
+            return self.kwargs["error_message"]
         bad_query_parameters = set()
         if self.bad_keys:
             bad_query_parameters.update(self.bad_keys)

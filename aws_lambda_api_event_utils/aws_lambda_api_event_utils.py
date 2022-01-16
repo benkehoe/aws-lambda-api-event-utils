@@ -730,26 +730,28 @@ class APIErrorResponse(Exception):
     def get_error_message(self) -> str:
         """Get the error message for this exception.
 
+        If a keyword argument named error_message was passed to the APIErrorResponse
+        constructor, this is returned. Otherwise it uses class fields.
         Returns the ERROR_MESSAGE class field if it is set by the subclass.
         If it is not, it falls back to the ERROR_MESSAGE_TEMPLATE class field,
         calling the string format() method on it with the exception's instance fields
         as input. If ERROR_MESSAGE_TEMPLATE is also not set, a generic error message
         will be returned.
         """
-        if self.ERROR_MESSAGE is NotImplemented:
-            if self.ERROR_MESSAGE_TEMPLATE is NotImplemented:
-                return "An error occurred."
-            else:
-                template_args = {}
-                # add kwargs provided to constructor
-                template_args.update(self.kwargs)
-                # instance fields should overwrite anything in self.kwargs
-                template_args.update(vars(self))
-                # remove self.kwargs field
-                template_args.pop("kwargs")
-                return self.ERROR_MESSAGE_TEMPLATE.format(**template_args)
-        else:
+        if "error_message" in self.kwargs:
+            return self.kwargs["error_message"]
+        if self.ERROR_MESSAGE is not NotImplemented:
             return self.ERROR_MESSAGE
+        if self.ERROR_MESSAGE_TEMPLATE is not NotImplemented:
+            template_args = {}
+            # add kwargs provided to constructor
+            template_args.update(self.kwargs)
+            # instance fields should overwrite anything in self.kwargs
+            template_args.update(vars(self))
+            # remove self.kwargs field
+            template_args.pop("kwargs")
+            return self.ERROR_MESSAGE_TEMPLATE.format(**template_args)
+        return "An error occurred."
 
     def get_body(self, body: Optional[Any] = None) -> Dict:
         """Get the response body for this exception.
@@ -1095,7 +1097,9 @@ class PayloadSchemaViolationError(APIErrorResponse):
     ERROR_CODE = "InvalidPayload"
 
     def get_error_message(self) -> str:
-        return str(self.validation_error)
+        if "error_message" in self.kwargs:
+            return self.kwargs["error_message"]
+        return self.validation_error.message
 
     def __init__(
         self,

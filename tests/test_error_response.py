@@ -154,12 +154,20 @@ def test_get_error_message():
     exc = TestError1(internal_msg)
     assert exc.get_error_message() == "An error occurred."
 
+    error_msg = rand_str()
+    exc = TestError1(internal_msg, error_message=error_msg)
+    assert exc.get_error_message() == error_msg
+
     class TestError2(APIErrorResponse):
         STATUS_CODE = 400
         ERROR_MESSAGE = rand_str()
 
     exc = TestError2(internal_msg)
     assert exc.get_error_message() == TestError2.ERROR_MESSAGE
+
+    error_msg = rand_str()
+    exc = TestError2(internal_msg, error_message=error_msg)
+    assert exc.get_error_message() == error_msg
 
     prefix = rand_str()
     param = rand_str()
@@ -168,12 +176,16 @@ def test_get_error_message():
         STATUS_CODE = 400
         ERROR_MESSAGE_TEMPLATE = prefix + " {param}"
 
-        def __init__(self, the_param, internal_message: str):
+        def __init__(self, the_param, internal_message: str, **kwargs):
             self.param = the_param
-            super().__init__(internal_message)
+            super().__init__(internal_message, **kwargs)
 
     exc = TestError3(param, internal_msg)
     assert exc.get_error_message() == f"{prefix} {param}"
+
+    error_msg = rand_str()
+    exc = TestError3(param, internal_msg, error_message=error_msg)
+    assert exc.get_error_message() == error_msg
 
 
 def test_get_body():

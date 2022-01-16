@@ -81,7 +81,7 @@ from aws_lambda_api_event_utils import *
 # or any keywords passed to the constructor
 class FailedProcessing(APIErrorResponse):
     STATUS_CODE = 400
-    ERROR_MESSAGE_TEMPLATE = "Failed during {step}"
+    ERROR_MESSAGE_TEMPLATE = "Failed during {step}."
 
 # ApiErrorResponses caught by the decorator will log the internal message
 # using this callable or logging.Logger
@@ -91,13 +91,21 @@ APIErrorResponse.DECORATOR_LOGGER = print
 def handler(event, context):
     try:
         # some code
-    except Exception as e:
+    except SomeInputError as e:
         # This will be caught by the decorator and converted to a response
         # You must provide an internal message suitable for logging
         # even if APIErrorResponse.DECORATOR_LOGGER is not set
         # keyword arguments are stored and can be referenced in
         # ERROR_MESSAGE_TEMPLATE
-        raise MyError(f"Processing failed: {e}", step="step 1")
+        raise MyError(f"Processing failed: {e}.", step="step 1")
+
+    try:
+        # some code
+    except SomeOtherInputError as e:
+        # You can also override the error message if it's using the default
+        # constructor or kwargs are passed to the APIErrorResponse constructor
+        raise MyError(f"Processing failed: {e}.", step="step 2",
+            error_message="This error message overrides the template.")
 
     return {"status": "success"}
 ```
@@ -337,16 +345,20 @@ The minimal subclass looks like this:
 class MyError(APIErrorResponse):
     STATUS_CODE = 400 # the status code for the response
 
-    ERROR_MESSAGE = "My error message" # fixed message
+    ERROR_MESSAGE = "My error message." # static message
 
 # usage:
 # APIErrorResponse requires an internal message be provided to its constructor.
 raise MyError("This is the internal error message for logging")
+
+# Providing a keyword argument named error_message will override the error message
+raise MyError("This is the internal error message for logging",
+    error_message="Override error message.")
 ```
 
 The error code defaults to the class name, but can be set explicitly with the `ERROR_CODE` class field.
 
-The error message can be a string template using the `ERROR_MESSAGE_TEMPLATE` field, rather than a fixed value.
+The error message can be a string template using the `ERROR_MESSAGE_TEMPLATE` field, rather than a static value.
 The template uses the standard `str.format()` method.
 It can reference any instance fields.
 For convenience, any keyword arguments provided to the `APIErrorResponse` constructor are stored and can also be referenced in the template, meaning you don't need to define your own constructor.
@@ -355,11 +367,48 @@ For convenience, any keyword arguments provided to the `APIErrorResponse` constr
 class MyError(APIErrorResponse):
     STATUS_CODE = 400 # the status code for the response
 
-    ERROR_MESSAGE_TEMPLATE = "My error message: {msg}" # fixed message
+    ERROR_MESSAGE_TEMPLATE = "My error message: {msg}." # static message
 
 # usage:
-raise MyError("This is the internal error message for logging",
+raise MyError("This is the internal error message for logging.",
     msg="value for the error message template")
+
+# Providing a keyword argument named error_message will override the error message
+raise MyError("This is the internal error message for logging.",
+    error_message="Override error message.")
+```
+
+You can provide your own constructor to take more detailed information, and then construct the internal message there.
+You can override `get_error_message()` to include more logic.
+
+```python
+class MyError(APIErrorResponse):
+    STATUS_CODE = 400 # the status code for the response
+
+    # taking kwargs and passing them to APIErrorResponse to allow
+    # overriding the error message like normal
+    def __init__(self, bad_param, **kwargs):
+        self.bad_param = bad_param
+        if "internal_message" not in kwargs:
+            kwargs["internal_message"] = f"Bad param: {bad_param}"
+        super().__init__(**kwargs)
+
+    def get_error_message(self):
+        # allow overriding error message
+        # self.kwargs are kwargs to APIErrorResponse
+        if "error_message" in self.kwargs:
+            return self.kwargs["error_message"]
+        if self.bad_param == "secret":
+            return "Bad parameter."
+        else:
+            return f"Bad parameter: {self.bad_param}."
+
+
+# usage:
+raise MyError("param1")
+
+# Providing a keyword argument named error_message will override the error message
+raise MyError("secret", error_message="Bad secret.")
 ```
 
 ### Headers and cookies
@@ -371,7 +420,8 @@ The response body is constructed in the `get_body()` method; the default impleme
 
 The `get_error_code()` method has a default implementation that uses the `ERROR_CODE` class field if it is set, falling back to the exception class name.
 
-The `get_error_message()` method has a default implementation that uses the `ERROR_MESSAGE` class field if it is set, otherwise using the `ERROR_MESSAGE_TEMPLATE` class field if it is set, calling the string `format()` method with `vars(self)` as inputs (that is, you can reference fields from the exception in the template).
+The `get_error_message()` method has a default implementation that uses the `error_message` keyword argument to the `APIErrorResponse` constructor if it was given, otherwise using the following class fields.
+`ERROR_MESSAGE` class field if it is set, otherwise using the `ERROR_MESSAGE_TEMPLATE` class field if it is set, calling the string `format()` method with `vars(self)` as inputs (that is, you can reference fields from the exception in the template).
 If neither `ERROR_MESSAGE` or `ERROR_MESSAGE_TEMPLATE` are set, the message `An error occurred.` is used.
 
 The `make_error_body()` class method constructs a body of the following form, taking the error code and message as input:
