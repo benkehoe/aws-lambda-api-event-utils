@@ -295,7 +295,7 @@ Headers and cookies can be set in the `api_response_headers` and `api_response_c
 A redirect response can be generated using the `make_redirect()` function, which takes a 3XX status code and a URL to redirect to.
 
 # `APIErrorResponse`
-The requirement of the handler returing a structured when an error occurs is not particularly Pythonic; instead, we should raise an exception and it should cauase the right thing to happen.
+The requirement of the handler returing a structured value when an error occurs is not particularly Pythonic; instead, we should raise an exception and it should cauase the right thing to happen.
 This functionality is provided by the `APIErrorResponse` exception class.
 An `APIErrorResponse` subclass has a status code, and knows how to create the response to return to API Gateway through the `get_response()` method.
 
@@ -319,7 +319,7 @@ By default, this does not include a traceback; set `APIErrorResponse.DECORATOR_L
 
 ## Response generation
 
-The response is generated with the `get_response()` method.
+To generate a response directly, use the `get_response()` method (this is only necessary if you're catching `APIErrorResponse`/subclasses yourself, rather than using a decorator).
 This method must be provided an `format_version` to determine the format of the response; this can either be a format version directly, or the Lambda function input event (to determine the format version from).
 It can optionally take a `body`, `headers`, and `cookies` to pass to the class methods that determine those values for the response.
 
