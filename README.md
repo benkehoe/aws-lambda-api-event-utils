@@ -118,7 +118,9 @@ def handler(event, context):
 
     # return some other status code (or a fully-customized response)
     # with make_response()
-    return make_response(201, {"status": "created"})
+    # format version can be provided implicitly as the Lambda function
+    # input event rather than having to provide it explicitly
+    return make_response(201, {"status": "created"}, format_version=event)
 ```
 
 ```python
