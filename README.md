@@ -116,7 +116,9 @@ def handler(event, context):
         raise MyError(f"Processing failed: {e}.", step="step 2",
             error_message="This error message overrides the template.")
 
-    return {"status": "success"}
+    # return some other status code (or a fully-customized response)
+    # with make_response()
+    return make_response(201, {"status": "created"})
 ```
 
 ```python
