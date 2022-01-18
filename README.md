@@ -25,6 +25,15 @@ from aws_lambda_api_event_utils import *
 import datetime
 import decimal
 
+# When an APIErrorResponse is caught by a decorator, it's turned into an
+# API response that by default has a payload of the form:
+# {
+#   "Error": {
+#     "Code": <error_code>,
+#     "Message": <error_message>
+#   }
+# }
+
 @api_event_handler
 def handler(event, context):
     try:
