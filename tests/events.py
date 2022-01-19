@@ -36,8 +36,7 @@ class IntegrationType(enum.Enum):
 
 def create_context():
     context = MagicMock()
-    del context.api_response_headers
-    del context.api_response_cookies
+    del context.api_response
     return context
 
 

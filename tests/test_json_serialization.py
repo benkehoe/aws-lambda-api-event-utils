@@ -10,7 +10,7 @@ from aws_lambda_api_event_utils.aws_lambda_api_event_utils import _json_dump
 
 
 def test_datetime_options():
-    options = DatetimeSerializationOptions()
+    options = DatetimeSerializationConfig()
     assert options.sep is None
     assert options.timespec is None
     assert options.use_z_format is True
@@ -20,10 +20,10 @@ def test_datetime_options():
 
 
 def test_json_options():
-    options = JSONSerializationOptions(datetime=True, decimal_type=None)
-    assert options.datetime == DatetimeSerializationOptions()
+    options = JSONSerializationConfig(datetime=True, decimal_type=None)
+    assert options.datetime == DatetimeSerializationConfig()
 
-    options = JSONSerializationOptions(datetime=False, decimal_type=None)
+    options = JSONSerializationConfig(datetime=False, decimal_type=None)
     assert options.datetime is None
 
 
@@ -31,16 +31,16 @@ def test_json_dump_decimal():
     num = Decimal("1.1")
     data = {"num": num}
 
-    options = JSONSerializationOptions(decimal_type=None, datetime=None)
+    options = JSONSerializationConfig(decimal_type=None, datetime=None)
     with pytest.raises(TypeError, match="is not JSON serializable"):
         serialized = _json_dump(data, options)
 
-    options = JSONSerializationOptions(decimal_type=float, datetime=None)
+    options = JSONSerializationConfig(decimal_type=float, datetime=None)
     serialized = _json_dump(data, options)
     roundtrip = json.loads(serialized)
     assert roundtrip["num"] == 1.1
 
-    options = JSONSerializationOptions(decimal_type=str, datetime=None)
+    options = JSONSerializationConfig(decimal_type=str, datetime=None)
     serialized = _json_dump(data, options)
     roundtrip = json.loads(serialized)
     assert roundtrip["num"] == "1.1"
@@ -63,11 +63,11 @@ def test_json_dump_datetime():
         "time_offset": dt_offset.timetz(),
     }
 
-    options = JSONSerializationOptions(datetime=False, decimal_type=None)
+    options = JSONSerializationConfig(datetime=False, decimal_type=None)
     with pytest.raises(TypeError, match="is not JSON serializable"):
         serialized = _json_dump(data, options)
 
-    options = JSONSerializationOptions(datetime=True, decimal_type=None)
+    options = JSONSerializationConfig(datetime=True, decimal_type=None)
     serialized = _json_dump(data, options)
     roundtrip = json.loads(serialized)
     assert roundtrip["datetime_no_tz"] == "2022-01-15T10:22:30.759878"
@@ -78,8 +78,8 @@ def test_json_dump_datetime():
     assert roundtrip["time_utc"] == "10:22:30.759878Z"
     assert roundtrip["time_offset"] == "10:22:30.759878+07:00"
 
-    options = JSONSerializationOptions(
-        datetime=DatetimeSerializationOptions(timespec="minutes"), decimal_type=None
+    options = JSONSerializationConfig(
+        datetime=DatetimeSerializationConfig(timespec="minutes"), decimal_type=None
     )
     serialized = _json_dump(data, options)
     roundtrip = json.loads(serialized)
@@ -90,8 +90,8 @@ def test_json_dump_datetime():
     assert roundtrip["time_utc"] == "10:22Z"
     assert roundtrip["time_offset"] == "10:22+07:00"
 
-    options = JSONSerializationOptions(
-        datetime=DatetimeSerializationOptions(sep=" "), decimal_type=None
+    options = JSONSerializationConfig(
+        datetime=DatetimeSerializationConfig(sep=" "), decimal_type=None
     )
     serialized = _json_dump(data, options)
     roundtrip = json.loads(serialized)
@@ -99,8 +99,8 @@ def test_json_dump_datetime():
     assert roundtrip["datetime_utc"] == "2022-01-15 10:22:30.759878Z"
     assert roundtrip["datetime_offset"] == "2022-01-15 10:22:30.759878+07:00"
 
-    options = JSONSerializationOptions(
-        datetime=DatetimeSerializationOptions(use_z_format=False), decimal_type=None
+    options = JSONSerializationConfig(
+        datetime=DatetimeSerializationConfig(use_z_format=False), decimal_type=None
     )
     serialized = _json_dump(data, options)
     roundtrip = json.loads(serialized)

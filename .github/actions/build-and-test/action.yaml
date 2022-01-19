@@ -14,5 +14,7 @@ runs:
     - run: poetry run pytest
       shell: bash
       working-directory: ./tests
+    - run: poetry run mypy aws_lambda_api_event_utils --ignore-missing-imports
+      shell: bash
     - run: poetry build
       shell: bash

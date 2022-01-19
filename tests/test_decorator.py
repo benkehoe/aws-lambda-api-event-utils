@@ -23,6 +23,9 @@ import logging.handlers
 import io
 
 from aws_lambda_api_event_utils import *
+from aws_lambda_api_event_utils.aws_lambda_api_event_utils import (
+    DecoratorApiResponseConfig,
+)
 
 from tests.events import *
 
@@ -103,14 +106,14 @@ def test_context_fields():
 
     @api_event_handler(format_version=FormatVersion.APIGW_20)
     def handler(event, context):
-        assert hasattr(context, "api_response_headers")
-        assert context.api_response_headers is None
+        assert hasattr(context, "api_response")
+        assert isinstance(context.api_response, DecoratorApiResponseConfig)
+        assert context.api_response.headers is None
+        assert context.api_response.cookies is None
+        assert context.api_response.cors_config is None
 
-        assert hasattr(context, "api_response_cookies")
-        assert context.api_response_cookies is None
-
-        context.api_response_headers = {header_key: header_value}
-        context.api_response_cookies = [cookie]
+        context.api_response.headers = {header_key: header_value}
+        context.api_response.cookies = [cookie]
 
         return {body_key: body_value}
 
@@ -120,7 +123,7 @@ def test_context_fields():
 
     assert response["headers"] == {
         header_key: header_value,
-        "content-type": "application/json",
+        "Content-Type": "application/json",
     }
     assert response["cookies"] == [cookie]
 

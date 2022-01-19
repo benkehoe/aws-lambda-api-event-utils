@@ -38,13 +38,13 @@ import decimal
 def handler(event, context):
     try:
         # some code
-    except SomePayloadError:
+    except SomePayloadError as exc:
         # this will re-raise as an APIErrorResponse so that it can be caught by
         # the decorator and converted to a response to API Gateway using the
         # given status code and a JSON response body with an error code set to
         # the exception class name and an error message set to the
         # stringified exception
-        APIErrorResponse.re_raise_as(400)
+        raise APIErrorResponse.from_exception(400, exc)
 
     try:
         # some code
@@ -130,15 +130,18 @@ from aws_lambda_api_event_utils import *
 def handler(event, context):
     # set response headers and cookies through the Lambda context object
     # this works for both returning a value and raising an APIErrorResponse
-    context.api_response_headers = {"my_header_key": "my_header_value"}
+    context.api_response.headers = {"my_header_key": "my_header_value"}
     return {"my_field": "my_value"}
 ```
 
 ```python
-# JSON schema validation requires the jsonschema package
-# it is not required by this package by default
-# install it separately or install this package with the
-# jsonschema extra as:
+# JSON schema validation requires either the fastjsonschema or jsonschema
+# package be installed to work
+# neither are required by this package by default
+# install one separately or install this package with the
+# appropriate extra as:
+# aws-lambda-api-event-utils[fastjsonschema]
+# or
 # aws-lambda-api-event-utils[jsonschema]
 from aws_lambda_api_event_utils import *
 
@@ -151,6 +154,8 @@ SCHEMA = {
     },
     "required": ["some_field"]
 }
+# With fastjsonschema, compiled schemas can be used with the
+# CompiledFastJSONSchema class
 
 # any decorator from the package provides the base functionality
 # of @api_event_handler
@@ -162,8 +167,8 @@ def handler(event, context):
 
     try:
         # some code
-    except SomeError:
-        APIErrorResponse.re_raise_as(400)
+    except SomeError as exc:
+        raise APIErrorResponse.from_exception(400, exc)
 
     return {"status": "success"}
 ```
@@ -185,6 +190,24 @@ def handler(event, context):
     payload = event["body"] # parsed and validated JSON
 
     # do work with my_param and payload
+
+    return {"status": "success"}
+```
+
+```python
+from aws_lambda_api_event_utils import *
+
+cors_config = CORSConfig(
+    allow_origin = "https://example.com",
+    allow_methods = ["GET", "POST"]
+)
+
+@api_event_handler
+def handler(event, context):
+    if CORSConfig.is_preflight_request(event):
+        return cors_config.make_preflight_response(format_version=event)
+
+    context.api_response.cors_config = cors_config
 
     return {"status": "success"}
 ```
@@ -238,6 +261,9 @@ def handler(event, context):
 pip install aws-lambda-api-utils
 
 # with jsonschema validation support
+# choose a schema validation library
+pip install aws-lambda-api-utils[fastjsonschema]
+or
 pip install aws-lambda-api-utils[jsonschema]
 ```
 
@@ -265,9 +291,14 @@ To validate that the event contains a binary body or not, set the `type` paramet
 
 To parse the body as JSON and optionally validate the JSON, use the `@json_body` decorator or the `get_json_body()` function.
 
-This takes an optional JSON schema, which will only work if the package has been installed with the `jsonschema` extra, or the `jsonschema` package has been installed separately.
+`@json_body` and `get_json_body()` can apply schema validation to the JSON payload.
+This requires a JSON schema validation library to be installed; both `fastjsonschema` and `jsonschema` are supported.
+These are not required dependencies by default; install this libary with the `fastjsonschema` or `jsonschema` extra, respectively, or install them separately.
+
 `get_json_body()` returns the parsed and validated JSON body; it does not modify the event.
 `@json_body` replaces the body in the event with the parsed and validated JSON body; it can be retrieved directly or with the `get_body()` function.
+
+If you're using `fastjsonschema`, you can wrap the schema in the `CompiledFastJSONSchema` class (i.e., `schema = CompiledFastJSONSchema({...})`) to use the schema compilation feature of that library.
 
 Without a schema, the decorator can be used with or without parentheses.
 
@@ -299,9 +330,9 @@ Otherwise, it constructs a response using `make_response()`, with the following 
 When serializing to JSON, objects of `datetime.datetime`, `datetime.date`, and `datetime.time` and `decimal.Decimal` classes are handled.
 By default, the `datetime` classes are serialized with their `isoformat()` methods and UTC timezones are converted from using an `+00:00` offset to the plain `Z` suffix.
 By default, `decimal.Decimal` is serialized as a float.
-This can be changed with the `set_default_json_serialization_options()` function, and also `make_response()` can be provided with a `JSONSerializationOptions` override directly.
+This can be changed with the `set_default_json_serialization_config()` function, and also `make_response()` can be provided with a `JSONSerializationConfig` override directly.
 
-Headers and cookies can be set in the `api_response_headers` and `api_response_cookies` fields on the Lambda context object (the decorator creates these fields).
+Headers and cookies can be set in the `api_response.headers` and `api_response.cookies` fields on the Lambda context object (the decorator creates these fields).
 
 # Redirects
 
@@ -312,8 +343,8 @@ The requirement of the handler returing a structured value when an error occurs 
 This functionality is provided by the `APIErrorResponse` exception class.
 An `APIErrorResponse` subclass has a status code, and knows how to create the response to return to API Gateway through the `get_response()` method.
 
-The most basic usage is when you catch an exception that should cause an error to be returned to the client, you can call `APIErrorResponse.re_raise_as()` in the `except` block, providing the status code for the response.
-This will pick up the active exception and use it for the response body ([see below](#Error-response-body) for error response body details): the error code will be the exception class name, and the error message will be the stringified exception.
+The most basic usage is when you catch an exception that should cause an error to be returned to the client, you can use `APIErrorResponse.from_exception()` to get an instance of a dynamically-generated `APIErrorResponse` subclass you can re-raise (or call the `get_response()` method on).
+You provide it the status code exception and use it for the response body ([see below](#Error-response-body) for error response body details): the error code will be the exception class name, and the error message will be the stringified exception.
 You can provide an internal message for logging ([see below](#Error-logging)), or it will default to a string containing the error code and error message.
 
 You can create your own subclasses of `APIErrorResponse` to make exceptions that will be caught by the decorators and turned into error responses as defined by the subclass.
@@ -322,7 +353,16 @@ You can additionally call `APIErrorResponse.from_status_code()` to generate a ge
 
 Validators in this package raise subclasses of `APIErrorResponse` for validation failures; see the docs for each validator for more information.
 
-When using a decorator to catch `APIErrorResponse` exceptions, headers and cookies for the response can be set from within the handler using the `api_response_headers` and `api_response_cookies` fields on the Lambda context object (the decorator creates these fields).
+Headers and cookies for responses generated in decorators can be set from within the handler using the `api_response.headers` and `api_response.cookies` fields on the Lambda context object (the decorator creates these fields).
+
+## CORS
+
+Support for CORS is through the `CORSConfig` class, an immutable representation of a CORS configuration.
+
+Check if an incoming event is a CORS preflight request with the `CORSConfig.is_preflight_request()` class method, and respond to it using a `CORSConfig` instance with the `make_preflight_response()` method.
+
+A `CORSConfig` instance can be provided to any method or function in this package that creates a response.
+To set the CORS configuration for responses generated in decorators, set the `api_response.cors_config` field on the Lambda context object.
 
 ## Error logging
 
@@ -425,8 +465,10 @@ raise MyError("secret", error_message="Bad secret.")
 ```
 
 ### Headers and cookies
-Override the `get_headers()` and `get_cookies()` methods to set the headers and cookies in the response.
-They each take the value provided to `get_response()` as input.
+To fully control the headers in the response, override the `get_headers()` method, which takes the headers given to `get_response()` as input.
+To add default headers, override `get_default_headers()`; these headers will be added if they are not already present in the result of `get_headers()`.
+
+To control the cookies in the response, override the `get_cookies()` method, which takes the cookies given to `get_response()` as input.
 
 ### Error response body
 The response body is constructed in the `get_body()` method; the default implementation uses the `get_error_code()` and `get_error_message()` fields with the `make_error_body()` class method.
@@ -462,7 +504,7 @@ The format version must be specified, but can be given implicitly by setting `fo
 If the `body` arugment is not a string or bytes, it will be serialized to JSON, and a `Content-Type` header of `application/json` will be added.
 
 The function signature is as follows:
-```python
+```
 make_response(
     status_code: Union[int, http.HTTPStatus],
     body: Optional[Any],
@@ -470,22 +512,24 @@ make_response(
     format_version: Union[FormatVersion, Dict],
     headers: Optional[Dict[str, Union[str, List[str]]]] = None,
     cookies: Optional[List[str]] = None,
-    json_serialization_options: Optional[JSONSerializationOptions] = None,
-) -> Dict:
+    cors_config: Optional[CORSConfig] = None,
+    json_serialization_config: Optional[JSONSerializationConfig] = None,
+) -> Dict
 ```
 
-When your function raises an exception that should be turned into a response, but you can't or don't want to modify the code to make that exception an `APIErrorResponse` subclass ([see above](#subclassing-errorresponse) for details), you can use the `APIErrorResponse.make_response_from_exception()` class method.
+When your function raises an exception that should be turned into a response, but you can't or don't want to modify the code to make that exception an `APIErrorResponse` subclass ([see above](#subclassing-errorresponse) for details), you can use the `APIErrorResponse.from_exception()` class method to create an .
 This takes a status code and exception, and creates the error response with the error code set to the exception class name and the error message set to the stringified exception.
 If the exception is an `APIErrorResponse` subclass, the result will be a call to its `get_response()` method, but it will raise an error if the status codes don't match.
 The method signature is as follows:
 
-```python
-APIErrorResponse.make_response_from_exception(
-    status_code: Union[int, http.HTTPStatus],
-    exception: Exception,
+```
+APIErrorResponse.get_response(
     *,
     format_version: Union[FormatVersion, Dict],
+    body: Optional[Any] = None,
     headers: Optional[Dict[str, Union[str, List[str]]]] = None,
     cookies: Optional[List[str]] = None,
-) -> Dict:
+    cors_config: Optional[CORSConfig] = None,
+    json_serialization_config: Optional[JSONSerializationConfig] = None,
+) -> Dict
 ```

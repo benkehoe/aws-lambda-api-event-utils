@@ -15,6 +15,7 @@ import pytest
 import base64
 import uuid
 import json
+import sys
 
 from aws_lambda_api_event_utils import *
 
@@ -354,7 +355,124 @@ def test_json_body_decorator():
         assert json.loads(response["body"])["Error"]["Code"] == "InvalidContentType"
 
 
+def test_get_json_body_schema_imports():
+    schema = {
+        "type": "object",
+        "properties": {"foo": {"type": "string", "const": "bar"}},
+        "additionalProperties": False,
+    }
+
+    valid_body_content = {"foo": "bar"}
+    valid_body_content_str = json.dumps(valid_body_content)
+
+    for integration_type in IntegrationType:
+        event = Event(
+            integration_type=integration_type,
+            method="POST",
+            path=Path(stage="live", path="/foo", resource="/foo"),
+            body=valid_body_content_str,
+        )
+
+        fjs = __import__("fastjsonschema")
+        js = __import__("jsonschema")
+
+        sys.modules["fastjsonschema"] = None
+        sys.modules["jsonschema"] = None
+
+        with pytest.raises(ModuleNotFoundError, match="Schema validation requires"):
+            body = get_json_body(
+                event.get_event(),
+                schema=schema,
+            )
+
+        sys.modules["fastjsonschema"] = fjs
+        sys.modules["jsonschema"] = None
+
+        body = get_json_body(
+            event.get_event(),
+            schema=schema,
+        )
+
+        sys.modules["fastjsonschema"] = None
+        sys.modules["jsonschema"] = js
+
+        body = get_json_body(
+            event.get_event(),
+            schema=schema,
+        )
+
+        sys.modules["fastjsonschema"] = fjs
+        sys.modules["jsonschema"] = js
+
+        body = get_json_body(
+            event.get_event(),
+            schema=schema,
+        )
+
+        sys.modules["fastjsonschema"] = fjs
+        sys.modules["jsonschema"] = js
+
+
+def test_get_json_body_compiled_schema():
+    schema = {
+        "type": "object",
+        "properties": {"foo": {"type": "string", "const": "bar"}},
+        "additionalProperties": False,
+    }
+
+    valid_body_content = {"foo": "bar"}
+    valid_body_content_str = json.dumps(valid_body_content)
+
+    invalid_body_content = {"not_foo": "not_bar"}
+    invalid_body_content_str = json.dumps(invalid_body_content)
+
+    for integration_type in IntegrationType:
+        base_event = Event(
+            integration_type=integration_type,
+            method="POST",
+            path=Path(stage="live", path="/foo", resource="/foo"),
+        )
+
+        fjs = __import__("fastjsonschema")
+        js = __import__("jsonschema")
+
+        compiled_schema = CompiledFastJSONSchema(schema)
+
+        body = get_json_body(
+            base_event.with_(body=valid_body_content_str).get_event(),
+            schema=compiled_schema,
+        )
+
+        with pytest.raises(PayloadSchemaViolationError):
+            get_json_body(
+                base_event.with_(body=invalid_body_content_str).get_event(),
+                schema=compiled_schema,
+            )
+
+        sys.modules["fastjsonschema"] = None
+
+        with pytest.raises(ModuleNotFoundError):
+            compiled_schema = CompiledFastJSONSchema(schema)
+
+        sys.modules["fastjsonschema"] = fjs
+        sys.modules["jsonschema"] = js
+
+
 def test_get_json_body_with_schema():
+    schema = {
+        "type": "object",
+        "properties": {"foo": {"type": "string", "const": "bar"}},
+        "additionalProperties": False,
+    }
+
+    valid_body_content = {"foo": "bar"}
+    valid_body_content_str = json.dumps(valid_body_content)
+    valid_body_content_bytes = valid_body_content_str.encode("utf-8")
+
+    invalid_body_content = {"not_foo": "not_bar"}
+    invalid_body_content_str = json.dumps(invalid_body_content)
+    invalid_body_content_bytes = invalid_body_content_str.encode("utf-8")
+
     for integration_type in IntegrationType:
         base_event = Event(
             integration_type=integration_type,
@@ -362,20 +480,6 @@ def test_get_json_body_with_schema():
             path=Path(stage="live", path="/foo", resource="/foo"),
             body=None,
         )
-
-        schema = {
-            "type": "object",
-            "properties": {"foo": {"type": "string", "const": "bar"}},
-            "additionalProperties": False,
-        }
-
-        valid_body_content = {"foo": "bar"}
-        valid_body_content_str = json.dumps(valid_body_content)
-        valid_body_content_bytes = valid_body_content_str.encode("utf-8")
-
-        invalid_body_content = {"not_foo": "not_bar"}
-        invalid_body_content_str = json.dumps(invalid_body_content)
-        invalid_body_content_bytes = invalid_body_content_str.encode("utf-8")
 
         body = get_json_body(
             base_event.with_(body=valid_body_content_str).get_event(),

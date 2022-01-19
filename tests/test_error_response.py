@@ -47,31 +47,29 @@ def test_make_response_from_exception():
     msg = rand_str()
     exc = Exception(msg)
 
-    response = APIErrorResponse.make_response_from_exception(
-        400, exc, format_version=FormatVersion.APIGW_20
+    response = APIErrorResponse.from_exception(400, exc).get_response(
+        format_version=FormatVersion.APIGW_20
     )
     assert response["statusCode"] == 400
     assert json.loads(response["body"]) == {
         "Error": {"Code": "Exception", "Message": msg}
     }
-    assert response["headers"]["content-type"] == "application/json"
+    assert response["headers"]["Content-Type"] == "application/json"
 
     with error_response_changes():
-        response = APIErrorResponse.make_response_from_exception(
-            400, exc, format_version=FormatVersion.APIGW_20
+        response = APIErrorResponse.from_exception(400, exc).get_response(
+            format_version=FormatVersion.APIGW_20
         )
-        assert response["headers"]["content-type"] == "application/json"
+        assert response["headers"]["Content-Type"] == "application/json"
 
         headers = {"header_name": "header_value"}
         cookies = [rand_str()]
-        response = APIErrorResponse.make_response_from_exception(
-            400,
-            exc,
+        response = APIErrorResponse.from_exception(400, exc).get_response(
             headers=headers,
             cookies=cookies,
             format_version=FormatVersion.APIGW_20,
         )
-        assert response["headers"]["content-type"] == "application/json"
+        assert response["headers"]["Content-Type"] == "application/json"
         assert response["headers"]["header_name"] == "header_value"
         assert "foo" not in response["headers"]
         assert response["cookies"] == cookies
@@ -85,15 +83,13 @@ def test_make_response_from_exception_subclass():
 
     exc = TestError("foo")
 
-    response = APIErrorResponse.make_response_from_exception(
-        450, exc, format_version=FormatVersion.APIGW_20
+    response = APIErrorResponse.from_exception(450, exc).get_response(
+        format_version=FormatVersion.APIGW_20
     )
     assert response == exc.get_response(format_version=FormatVersion.APIGW_20)
 
     with pytest.raises(ValueError, match="Status code mismatch"):
-        APIErrorResponse.make_response_from_exception(
-            400, exc, format_version=FormatVersion.APIGW_20
-        )
+        raise APIErrorResponse.from_exception(400, exc)
 
 
 def test_make_error_body():
@@ -233,7 +229,7 @@ def test_get_response():
         "body": json.dumps(
             {"Error": {"Code": "TestError1", "Message": "An error occurred."}}
         ),
-        "headers": {"content-type": "application/json"},
+        "headers": {"Content-Type": "application/json"},
         "isBase64Encoded": False,
     }
 
@@ -349,8 +345,8 @@ def test_raise():
     with pytest.raises(APIErrorResponse) as exc:
         try:
             raise RuntimeError(msg)
-        except RuntimeError:
-            APIErrorResponse.re_raise_as(400)
+        except RuntimeError as e:
+            raise APIErrorResponse.from_exception(400, e)
     exc = exc.value
     assert exc.STATUS_CODE == 400
     assert exc.get_error_code() == "RuntimeError"
@@ -362,8 +358,8 @@ def test_raise():
     with pytest.raises(APIErrorResponse) as exc:
         try:
             raise RuntimeError(msg)
-        except RuntimeError:
-            APIErrorResponse.re_raise_as(400, internal_message=internal_msg)
+        except RuntimeError as e:
+            raise APIErrorResponse.from_exception(400, e, internal_message=internal_msg)
     exc = exc.value
     assert exc.STATUS_CODE == 400
     assert exc.get_error_code() == "RuntimeError"
@@ -373,7 +369,7 @@ def test_raise():
     msg = rand_str()
     with pytest.raises(APIErrorResponse) as exc:
         e = RuntimeError(msg)
-        APIErrorResponse.re_raise_as(400, exc=e)
+        raise APIErrorResponse.from_exception(400, e)
     exc = exc.value
     assert exc.STATUS_CODE == 400
     assert exc.get_error_code() == "RuntimeError"

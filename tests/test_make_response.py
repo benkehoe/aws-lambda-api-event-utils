@@ -46,9 +46,10 @@ def test_make_response_apigw10_body():
     response = make_response(
         status_code=200, body=body, format_version=FormatVersion.APIGW_10
     )
+    print(json.dumps(response, indent=2))
     assert response["statusCode"] == 200
     assert response["body"] == body
-    assert response["headers"]["content-type"] == "text/plain"
+    assert response["headers"]["Content-Type"] == "text/plain"
 
     response = make_response(
         status_code=http.HTTPStatus.OK, body=body, format_version=FormatVersion.APIGW_10
@@ -59,7 +60,7 @@ def test_make_response_apigw10_body():
     response = make_response(200, body, format_version=FormatVersion.APIGW_10)
     assert response["statusCode"] == 200
     assert response["body"] == body
-    assert response["headers"]["content-type"] == "text/plain"
+    assert response["headers"]["Content-Type"] == "text/plain"
 
     body_bytes = uuid.uuid4().bytes
     body_base64 = str(base64.b64encode(body_bytes), "ascii")
@@ -69,21 +70,21 @@ def test_make_response_apigw10_body():
     assert type(response["body"]) == str
     assert response["body"] == body_base64
     assert response["isBase64Encoded"] == True
-    assert response["headers"]["content-type"] == "application/octet-stream"
+    assert response["headers"]["Content-Type"] == "application/octet-stream"
 
     body = {"foo": "bar"}
     response = make_response(
         status_code=200, body=body, format_version=FormatVersion.APIGW_10
     )
     assert json.loads(response["body"]) == body
-    assert response["headers"]["content-type"] == "application/json"
+    assert response["headers"]["Content-Type"] == "application/json"
 
     body = ["foo", "bar"]
     response = make_response(
         status_code=200, body=body, format_version=FormatVersion.APIGW_10
     )
     assert json.loads(response["body"]) == body
-    assert response["headers"]["content-type"] == "application/json"
+    assert response["headers"]["Content-Type"] == "application/json"
 
 
 def test_make_response_apigw20_body():
@@ -106,12 +107,12 @@ def test_make_response_apigw20_body():
     )
     assert response["statusCode"] == 200
     assert response["body"] == body
-    assert response["headers"]["content-type"] == "text/plain"
+    assert response["headers"]["Content-Type"] == "text/plain"
 
     response = make_response(200, body, format_version=FormatVersion.APIGW_20)
     assert response["statusCode"] == 200
     assert response["body"] == body
-    assert response["headers"]["content-type"] == "text/plain"
+    assert response["headers"]["Content-Type"] == "text/plain"
 
     body_bytes = uuid.uuid4().bytes
     body_base64 = str(base64.b64encode(body_bytes), "ascii")
@@ -121,21 +122,21 @@ def test_make_response_apigw20_body():
     assert type(response["body"]) == str
     assert response["body"] == body_base64
     assert response["isBase64Encoded"] == True
-    assert response["headers"]["content-type"] == "application/octet-stream"
+    assert response["headers"]["Content-Type"] == "application/octet-stream"
 
     body = {"foo": "bar"}
     response = make_response(
         status_code=200, body=body, format_version=FormatVersion.APIGW_20
     )
     assert json.loads(response["body"]) == body
-    assert response["headers"]["content-type"] == "application/json"
+    assert response["headers"]["Content-Type"] == "application/json"
 
     body = ["foo", "bar"]
     response = make_response(
         status_code=200, body=body, format_version=FormatVersion.APIGW_20
     )
     assert json.loads(response["body"]) == body
-    assert response["headers"]["content-type"] == "application/json"
+    assert response["headers"]["Content-Type"] == "application/json"
 
 
 def test_make_response_apigw10_headers():
@@ -146,14 +147,14 @@ def test_make_response_apigw10_headers():
     )
     assert response["statusCode"] == 200
     assert response["body"] == body
-    assert response["headers"] == {"content-type": "text/plain"}
+    assert response["headers"] == {"Content-Type": "text/plain"}
 
     response = make_response(
         200, body, headers={"foo": "bar"}, format_version=FormatVersion.APIGW_10
     )
     assert response["statusCode"] == 200
     assert response["body"] == body
-    assert response["headers"] == {"foo": "bar", "content-type": "text/plain"}
+    assert response["headers"] == {"foo": "bar", "Content-Type": "text/plain"}
 
     response = make_response(
         200,
@@ -163,7 +164,7 @@ def test_make_response_apigw10_headers():
     )
     assert response["statusCode"] == 200
     assert response["body"] == body
-    assert response["headers"] == {"foo": "bar", "a": "b", "content-type": "text/plain"}
+    assert response["headers"] == {"foo": "bar", "a": "b", "Content-Type": "text/plain"}
 
     response = make_response(
         200,
@@ -176,7 +177,7 @@ def test_make_response_apigw10_headers():
     assert response["multiValueHeaders"] == {
         "foo": ["bar"],
         "a": ["b", "c"],
-        "content-type": ["text/plain"],
+        "Content-Type": ["text/plain"],
     }
 
 
@@ -188,14 +189,14 @@ def test_make_response_apigw20_headers():
     )
     assert response["statusCode"] == 200
     assert response["body"] == body
-    assert response["headers"] == {"content-type": "text/plain"}
+    assert response["headers"] == {"Content-Type": "text/plain"}
 
     response = make_response(
         200, body, headers={"foo": "bar"}, format_version=FormatVersion.APIGW_20
     )
     assert response["statusCode"] == 200
     assert response["body"] == body
-    assert response["headers"] == {"foo": "bar", "content-type": "text/plain"}
+    assert response["headers"] == {"foo": "bar", "Content-Type": "text/plain"}
 
     response = make_response(
         200,
@@ -205,7 +206,7 @@ def test_make_response_apigw20_headers():
     )
     assert response["statusCode"] == 200
     assert response["body"] == body
-    assert response["headers"] == {"foo": "bar", "a": "b", "content-type": "text/plain"}
+    assert response["headers"] == {"foo": "bar", "a": "b", "Content-Type": "text/plain"}
 
     response = make_response(
         200,
@@ -218,7 +219,7 @@ def test_make_response_apigw20_headers():
     assert response["headers"] == {
         "foo": "bar",
         "a": "b,c",
-        "content-type": "text/plain",
+        "Content-Type": "text/plain",
     }
     assert "multiValueHeaders" not in response
 

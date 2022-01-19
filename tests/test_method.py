@@ -35,8 +35,19 @@ def test_validate_method():
         with pytest.raises(UnsupportedMethodError):
             validate_method(event.get_event(), "POST")
 
-        with pytest.raises(UnsupportedMethodError):
+        with pytest.raises(UnsupportedMethodError) as exc:
             validate_method(event.get_event(), ["POST"])
+        response = exc.value.get_response(
+            format_version=integration_type.format_version
+        )
+        assert response["headers"]["Allow"] == "POST"
+
+        with pytest.raises(UnsupportedMethodError) as exc:
+            validate_method(event.get_event(), ["POST", "PATCH"])
+        response = exc.value.get_response(
+            format_version=integration_type.format_version
+        )
+        assert response["headers"]["Allow"] == "POST, PATCH"
 
 
 def test_method_decorator():

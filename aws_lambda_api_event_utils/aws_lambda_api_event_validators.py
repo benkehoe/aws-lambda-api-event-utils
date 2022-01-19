@@ -22,6 +22,9 @@ from .aws_lambda_api_event_utils import (
     get_event_format_version,
     _get_decorator,
     _get_method,
+    _get_headers,
+    ApiEventType,
+    LaxHeadersType,
 )
 
 __all__ = (
@@ -51,10 +54,10 @@ __all__ = (
 )
 
 
-def _get_stage(event: Dict):
+def _get_stage(event: ApiEventType) -> str:
     format_version = get_event_format_version(event)
     if format_version in [FormatVersion.APIGW_10, FormatVersion.APIGW_20]:
-        return event["requestContext"]["stage"]
+        return event["requestContext"]["stage"]  # type: ignore
     else:
         raise NotImplementedError
 
@@ -91,9 +94,9 @@ class FormatVersionError(APIErrorResponse):
         self,
         *,
         expected_version: FormatVersion,
-        actual_version: FormatVersion,
+        actual_version: Optional[FormatVersion],
         **kwargs,
-    ):
+    ) -> None:
         self.expected_version = expected_version
         self.actual_version = actual_version
         if "internal_message" not in kwargs:
@@ -109,7 +112,10 @@ class FormatVersionError(APIErrorResponse):
 
 
 def validate_event_format_version(
-    event: Dict, format_version: FormatVersion, *, use_error_response: bool = False
+    event: ApiEventType,
+    format_version: FormatVersion,
+    *,
+    use_error_response: bool = False,
 ) -> FormatVersion:
     """Validate the event uses the given format version.
 
@@ -140,7 +146,7 @@ def validate_event_format_version(
             expected_version=format_version, actual_version=actual_version
         )
         if not use_error_response:
-            error = TypeError(error.internal_message)
+            error = TypeError(error.internal_message)  # type: ignore
         raise error
     return actual_version
 
@@ -196,7 +202,7 @@ class UnsupportedMethodError(APIErrorResponse):
 
     def __init__(
         self, *, event_method: str, valid_methods: Union[str, List[str]], **kwargs
-    ):
+    ) -> None:
 
         if isinstance(valid_methods, str):
             valid_methods = [valid_methods]
@@ -221,19 +227,12 @@ class UnsupportedMethodError(APIErrorResponse):
             return self.kwargs["error_message"]
         return f"{self.event_method} is not a valid HTTP method. Valid methods are {' '.join(self.valid_methods)}"
 
-    def get_headers(
-        self, headers: Optional[Dict[str, Union[str, List[str]]]] = None
-    ) -> Optional[Dict[str, Union[str, List[str]]]]:
+    def get_default_headers(self) -> LaxHeadersType:
         """Include Allow header as required by RFC7231."""
-        headers = super().get_headers(headers=headers)
-        if not headers:
-            headers = {}
-        else:
-            headers = headers.copy()
-        headers["allow"] = ", ".join(self.valid_methods)
+        return {"Allow": ", ".join(self.valid_methods)}
 
 
-def validate_method(event: Dict, method: Union[str, List[str]]) -> str:
+def validate_method(event: ApiEventType, method: Union[str, List[str]]) -> str:
     """Validate the method in the event against the given method(s).
 
     Args:
@@ -286,10 +285,10 @@ class PathNotFoundError(APIErrorResponse):
         self,
         *,
         event_path: str,
-        valid_paths: Union[str, re.Pattern, List[Union[str, re.Pattern]]],
+        valid_paths: Union[str, re.Pattern, List],
         is_regex: bool = False,
         **kwargs,
-    ):
+    ) -> None:
         proc = lambda v: v.pattern if isinstance(v, re.Pattern) else v
         if isinstance(valid_paths, (str, re.Pattern)):
             valid_paths = proc(valid_paths)
@@ -304,7 +303,7 @@ class PathNotFoundError(APIErrorResponse):
             else:
                 kwargs[
                     "internal_message"
-                ] = f"Path {event_path} not in valid set {{{' '.join(valid_paths)}}}."
+                ] = f"Path {event_path} not in valid set {{{', '.join(str(p) for p in valid_paths)}}}."
 
         self.event_path = event_path
         self.valid_paths = valid_paths
@@ -326,7 +325,7 @@ def _strip_stage(*, path: str, stage: str, format_version: str):
 
 
 def _get_path_and_parameters(
-    event: Dict, *, disable_stage_removal: Optional[bool] = False
+    event: ApiEventType, *, disable_stage_removal: Optional[bool] = False
 ) -> Tuple[str, Dict[str, str]]:
     """Helper function to extract path and parameters without validating."""
     format_version = get_event_format_version(event)
@@ -343,13 +342,13 @@ def _get_path_and_parameters(
     if not disable_stage_removal:
         stage = _get_stage(event)
         event_path = _strip_stage(
-            path=event_path, stage=stage, format_version=format_version
+            path=event_path, stage=stage, format_version=format_version  # type: ignore
         )
 
-    return event_path, parameters
+    return event_path, parameters  # type: ignore
 
 
-def _update_path_parameters(event: Dict, parameters: Dict) -> Dict:
+def _update_path_parameters(event: ApiEventType, parameters: Dict) -> Dict:
     """Helper method to modify the event's path parameters with the input dict."""
     format_version = get_event_format_version(event)
     if format_version in [FormatVersion.APIGW_10, FormatVersion.APIGW_20]:
@@ -357,14 +356,14 @@ def _update_path_parameters(event: Dict, parameters: Dict) -> Dict:
             if not parameters:
                 return {}
             event["pathParameters"] = {}
-        event["pathParameters"].update(parameters)
-        return event["pathParameters"]
+        event["pathParameters"].update(parameters)  # type: ignore
+        return event["pathParameters"]  # type: ignore
     else:
         raise NotImplementedError
 
 
 def validate_path(
-    event: Dict,
+    event: ApiEventType,
     path: Union[str, List[str]],
     *,
     disable_stage_removal: Optional[bool] = False,
@@ -410,7 +409,7 @@ def path(path: Union[str, List[str]], *, disable_stage_removal: Optional[bool] =
 
 
 def validate_path_regex(
-    event: Dict,
+    event: ApiEventType,
     path_regex: Union[str, re.Pattern],
     *,
     disable_stage_removal: Optional[bool] = False,
@@ -490,7 +489,7 @@ class PathParameterError(APIErrorResponse):
     ERROR_CODE = "PathNotFound"
     ERROR_MESSAGE_TEMPLATE = "Path {event_path} not found."
 
-    def __init__(self, *, event_path, bad_keys, bad_values, **kwargs):
+    def __init__(self, *, event_path, bad_keys, bad_values, **kwargs) -> None:
         self.event_path = event_path
         self.bad_keys = bad_keys
         self.bad_values = bad_values
@@ -510,7 +509,7 @@ class PathParameterError(APIErrorResponse):
 
 
 def validate_path_parameters(
-    event: Dict,
+    event: ApiEventType,
     *,
     keys: Optional[List[str]] = None,
     values: Optional[Dict[str, str]] = None,
@@ -641,7 +640,7 @@ class HeaderError(APIErrorResponse):
         bad_keys: List[str],
         bad_values: Dict[str, str],
         **kwargs,
-    ):
+    ) -> None:
         self.event_headers = event_headers
         self.bad_keys = bad_keys
         self.bad_values = bad_values
@@ -649,9 +648,9 @@ class HeaderError(APIErrorResponse):
         if "internal_message" not in kwargs:
             message_parts = []
             if bad_keys:
-                message_parts.append(f"missing keys {','.join(bad_keys)}")
+                message_parts.append(f"missing keys {', '.join(bad_keys)}")
             if bad_values:
-                s = ",".join(f"{key}={value}" for key, value in bad_values.items())
+                s = ", ".join(f"{key}={value}" for key, value in bad_values.items())
                 message_parts.append("invalid values " + s)
             kwargs["internal_message"] = f"Bad headers: {' and '.join(message_parts)}."
 
@@ -659,7 +658,7 @@ class HeaderError(APIErrorResponse):
 
 
 def validate_headers(
-    event: Dict,
+    event: ApiEventType,
     *,
     keys: Optional[List[str]] = None,
     values: Optional[Dict[str, str]] = None,
@@ -683,16 +682,7 @@ def validate_headers(
         HeaderError: When the headers don't match
             the requirements.
     """
-    format_version = get_event_format_version(event)
-    if format_version == FormatVersion.APIGW_10:
-        event_headers = dict(
-            (key.lower(), ",".join(value))
-            for key, value in event["multiValueHeaders"].items()
-        )
-    elif format_version == FormatVersion.APIGW_20:
-        event_headers = event["headers"]
-    else:
-        raise NotImplementedError
+    event_headers = _get_headers(event)
 
     bad_keys = []
     if keys:
@@ -788,24 +778,13 @@ class ContentTypeError(APIErrorResponse):
             return f"Content type must be {self.valid_content_types[0]}."
         return f"Content type must be one of: {', '.join(self.valid_content_types)}."
 
-    # TODO: make this work
-    # def get_headers(self, headers: Optional[Dict[str, str]]=None) -> Optional[Dict[str, Union[str, List[str]]]]:
-    #     if headers is not None:
-    #         headers = headers.copy()
-    #     else:
-    #         headers = {}
-    #         if self.HEADERS:
-    #             headers.update(self.HEADERS)
-    #     headers["accept-post"] = ", ".join(self.valid_content_types)
-    #     return headers
-
     def __init__(
         self,
         *,
-        event_content_type: str,
+        event_content_type: Optional[str],
         valid_content_types: Union[str, List[str]],
         **kwargs,
-    ):
+    ) -> None:
         if isinstance(valid_content_types, str):
             valid_content_types = [valid_content_types]
         self.event_content_type = event_content_type
@@ -822,7 +801,9 @@ class ContentTypeError(APIErrorResponse):
         super().__init__(**kwargs)
 
 
-def validate_content_type(event: Dict, content_type: Union[str, List[str]]) -> str:
+def validate_content_type(
+    event: ApiEventType, content_type: Union[str, List[str]]
+) -> str:
     """Validate the content type in the event.
 
     Args:
@@ -839,12 +820,12 @@ def validate_content_type(event: Dict, content_type: Union[str, List[str]]) -> s
     format_version = get_event_format_version(event)
     if format_version == FormatVersion.APIGW_10:
         event_content_type = None
-        for key, value in event["headers"].items():
+        for key, value in event["headers"].items():  # type: ignore
             if key.lower() == "content-type":
                 event_content_type = value
     elif format_version == FormatVersion.APIGW_20:
         event_headers = event["headers"]
-        event_content_type = event_headers.get("content-type")
+        event_content_type = event_headers.get("content-type")  # type: ignore
     else:
         raise NotImplementedError
     if not event_content_type:
@@ -911,7 +892,7 @@ class QueryParameterError(APIErrorResponse):
         bad_keys: List[str],
         bad_values: Dict[str, str],
         **kwargs,
-    ):
+    ) -> None:
         self.event_query_parameters = event_query_parameters
         self.bad_keys = bad_keys
         self.bad_values = bad_values
@@ -919,9 +900,9 @@ class QueryParameterError(APIErrorResponse):
         if "internal_message" not in kwargs:
             message_parts = []
             if bad_keys:
-                message_parts.append(f"missing keys {','.join(bad_keys)}")
+                message_parts.append(f"missing keys {', '.join(bad_keys)}")
             if bad_values:
-                s = ",".join(f"{key}={value}" for key, value in bad_values.items())
+                s = ", ".join(f"{key}={value}" for key, value in bad_values.items())
                 message_parts.append("invalid values " + s)
             kwargs[
                 "internal_message"
@@ -931,7 +912,7 @@ class QueryParameterError(APIErrorResponse):
 
 
 def validate_query_parameters(
-    event: Dict,
+    event: ApiEventType,
     *,
     keys: Optional[List[str]] = None,
     values: Optional[Dict[str, str]] = None,
@@ -959,11 +940,11 @@ def validate_query_parameters(
     if format_version == FormatVersion.APIGW_10:
         event_query_parameters = dict(
             (key, ",".join(value))
-            for key, value in event["multiValueQueryStringParameters"].items()
+            for key, value in event["multiValueQueryStringParameters"].items()  # type: ignore
         )
     elif format_version == FormatVersion.APIGW_20:
         if "queryStringParameters" in event:
-            event_query_parameters = event["queryStringParameters"]
+            event_query_parameters = event["queryStringParameters"]  # type: ignore
         else:
             event_query_parameters = {}
     else:

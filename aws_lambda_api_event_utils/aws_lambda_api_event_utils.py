@@ -11,6 +11,32 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 
+__version__ = "0.2.0"  # update here and pyproject.toml
+
+__all__ = (
+    "api_event_handler",
+    "BodyType",
+    "CompiledFastJSONSchema",
+    "CORSConfig",
+    "DatetimeSerializationConfig",
+    "APIErrorResponse",
+    "EVENT_FORMAT_VERSION_CACHE_KEY",
+    "FormatVersion",
+    "get_body",
+    "get_default_json_serialization_config",
+    "get_event_format_version",
+    "get_json_body",
+    "InvalidRequestError",
+    "json_body",
+    "JSONSerializationConfig",
+    "make_redirect",
+    "make_response",
+    "PayloadBinaryTypeError",
+    "PayloadJSONDecodeError",
+    "PayloadSchemaViolationError",
+    "set_default_json_serialization_config",
+)
+
 import base64
 import json
 import functools
@@ -22,7 +48,7 @@ import decimal
 import re
 import traceback
 import http
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field
 from typing import (
     Dict,
     Iterable,
@@ -34,31 +60,16 @@ from typing import (
     Tuple,
     Type,
     NoReturn,
+    ClassVar,
+    Callable,
+    cast,
 )
 
-__version__ = "0.2.0"  # update here and pyproject.toml
+ApiEventType = Dict[str, Any]
+ApiResponseType = Dict[str, Any]
 
-__all__ = (
-    "api_event_handler",
-    "BodyType",
-    "DatetimeSerializationOptions",
-    "APIErrorResponse",
-    "EVENT_FORMAT_VERSION_CACHE_KEY",
-    "FormatVersion",
-    "get_body",
-    "get_default_json_serialization_options",
-    "get_event_format_version",
-    "get_json_body",
-    "InvalidRequestError",
-    "json_body",
-    "JSONSerializationOptions",
-    "make_redirect",
-    "make_response",
-    "PayloadBinaryTypeError",
-    "PayloadJSONDecodeError",
-    "PayloadSchemaViolationError",
-    "set_default_json_serialization_options",
-)
+LaxHeadersType = Dict[str, Any]  # Dict[str, Union[str, List[str]]]
+StrictHeadersType = Dict[str, str]
 
 EVENT_FORMAT_VERSION_CACHE_KEY = "__event_format_version__"
 
@@ -68,7 +79,6 @@ class FormatVersion(enum.Enum):
 
     APIGW_10 = "API Gateway HTTP 1.0 and REST"
     APIGW_20 = "API Gateway HTTP 2.0"
-    # ALB_10 = "ALB 1.0"
 
 
 @dataclass
@@ -122,20 +132,8 @@ _API_GW_20_DATA = _FormatVersionData(
     ),
 )
 
-_ALB_10_DATA = _FormatVersionData(
-    version=None,
-    keys=(
-        "httpMethod",
-        "path",
-        "headers",
-        "queryStringParameters",
-        "body",
-        "isBase64Encoded",
-    ),
-)
 
-
-def _get_key(d: str, key: Union[str, Iterable[str]]):
+def _get_key(d: Dict, key: Union[str, Iterable[str]]):
     if isinstance(key, str):
         return key in d, d.get(key)
     value = d
@@ -146,7 +144,9 @@ def _get_key(d: str, key: Union[str, Iterable[str]]):
     return True, value
 
 
-def _event_matches_format_version(event: Dict, format_version_data: _FormatVersionData):
+def _event_matches_format_version(
+    event: ApiEventType, format_version_data: _FormatVersionData
+):
     if format_version_data.version:
         version_key, version_value = format_version_data.version
         if event.get(version_key) != version_value:
@@ -159,7 +159,7 @@ def _event_matches_format_version(event: Dict, format_version_data: _FormatVersi
 
 
 def get_event_format_version(
-    event: Dict, disable_cache: bool = False
+    event: ApiEventType, disable_cache: bool = False
 ) -> Optional[FormatVersion]:
     """Get the format version from the event.
 
@@ -173,7 +173,9 @@ def get_event_format_version(
     Returns: The event format version.
     """
     if EVENT_FORMAT_VERSION_CACHE_KEY in event:
-        return FormatVersion[event[EVENT_FORMAT_VERSION_CACHE_KEY]]
+        format_version = event[EVENT_FORMAT_VERSION_CACHE_KEY]
+        cast(str, format_version)
+        return FormatVersion[format_version]  # type: ignore
     event_format_version = None
 
     if _event_matches_format_version(event, _API_GW_10_DATA):
@@ -182,8 +184,6 @@ def get_event_format_version(
         event_format_version = FormatVersion.APIGW_20
     elif _event_matches_format_version(event, _API_GW_10_REST_DATA):
         event_format_version = FormatVersion.APIGW_10
-    # elif _event_matches_format_version(event, _ALB_10_DATA):
-    #     event_format_version = FormatVersion.ALB_10
 
     if event_format_version and not disable_cache:
         event[EVENT_FORMAT_VERSION_CACHE_KEY] = event_format_version.name
@@ -191,7 +191,7 @@ def get_event_format_version(
 
 
 @dataclass(frozen=True)
-class DatetimeSerializationOptions:
+class DatetimeSerializationConfig:
     """Options for serializing classes from the datetime package.
 
     When use_z_format is True (the default), when a UTC datetime or time
@@ -208,91 +208,215 @@ class DatetimeSerializationOptions:
 
 
 @dataclass(frozen=True)
-class JSONSerializationOptions:
+class JSONSerializationConfig:
     """Options for serializing classes to JSON.
 
     The datetime field can be set to True to use the default (serialize
     classes from the datetime package, update datetime and time strings to
     use the "Z" timezone designator for UTC), None or False to disable
-    serializing any of these classes, or a DatetimeSerializationOptions object.
+    serializing any of these classes, or a DatetimeSerializationConfig object.
 
     The decimal_type field should be float or str, or None to disable
     serialization of decimal.Decimal objects.
     """
 
-    datetime: Optional[Union[bool, DatetimeSerializationOptions]]
-    decimal_type: Optional[Union[Type[float], Type[str]]]
+    datetime: Optional[DatetimeSerializationConfig]
+    decimal_type: Union[None, Type[float], Type[str]]
 
     def __post_init__(self):
         if self.datetime is True:
-            object.__setattr__(self, "datetime", DatetimeSerializationOptions())
+            object.__setattr__(self, "datetime", DatetimeSerializationConfig())
         elif self.datetime is False:
             object.__setattr__(self, "datetime", None)
 
 
-_DEFAULT_JSON_SERIALIZATION_OPTIONS = JSONSerializationOptions(
-    datetime=True, decimal_type=float
-)
+_DEFAULT_JSON_SERIALIZATION_CONFIG: Optional[
+    JSONSerializationConfig
+] = JSONSerializationConfig(datetime=DatetimeSerializationConfig(), decimal_type=float)
 
 
-def set_default_json_serialization_options(options: Optional[JSONSerializationOptions]):
-    """Set the default JSON serialization options."""
-    global _DEFAULT_JSON_SERIALIZATION_OPTIONS
-    _DEFAULT_JSON_SERIALIZATION_OPTIONS = options
+def set_default_json_serialization_config(config: Optional[JSONSerializationConfig]):
+    """Set the default JSON serialization config."""
+    global _DEFAULT_JSON_SERIALIZATION_CONFIG
+    _DEFAULT_JSON_SERIALIZATION_CONFIG = config
 
 
-def get_default_json_serialization_options() -> JSONSerializationOptions:
-    """Get the default JSON serialization options.
+def get_default_json_serialization_config() -> Optional[JSONSerializationConfig]:
+    """Get the default JSON serialization config.
 
     Initializes to serializing classes from the datetime package, including
     updating datetime and time strings to use the "Z" timezone designator for UTC,
     and serializing decimal.Decimal as float.
     """
-    global _DEFAULT_JSON_SERIALIZATION_OPTIONS
-    return _DEFAULT_JSON_SERIALIZATION_OPTIONS
+    global _DEFAULT_JSON_SERIALIZATION_CONFIG
+    return _DEFAULT_JSON_SERIALIZATION_CONFIG
 
 
-def _json_dump_default(obj: Any, options: JSONSerializationOptions):
+def _json_dump_default(obj: Any, config: JSONSerializationConfig):
     if (
         isinstance(obj, (datetime.datetime, datetime.date, datetime.time))
-        and options.datetime
+        and config.datetime
     ):
+        cast(DatetimeSerializationConfig, config.datetime)
         kwargs = {}
         if (
             isinstance(obj, (datetime.datetime, datetime.time))
-            and options.datetime.timespec is not None
+            and config.datetime.timespec is not None
         ):
-            kwargs["timespec"] = options.datetime.timespec
-        if isinstance(obj, datetime.datetime) and options.datetime.sep is not None:
-            kwargs["sep"] = options.datetime.sep
+            kwargs["timespec"] = config.datetime.timespec
+        if isinstance(obj, datetime.datetime) and config.datetime.sep is not None:
+            kwargs["sep"] = config.datetime.sep
 
         value = obj.isoformat(**kwargs)
 
-        if options.datetime.use_z_format:
+        if config.datetime.use_z_format:
             value = re.sub(r"\+00(:?00)?$", "Z", value)
 
         return value
-    if isinstance(obj, decimal.Decimal) and options.decimal_type:
-        return options.decimal_type(obj)
+    if isinstance(obj, decimal.Decimal) and config.decimal_type:
+        return config.decimal_type(obj)
     raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
 
-def _json_dump(data: Any, options: JSONSerializationOptions):
+def _json_dump(data: Any, config: Optional[JSONSerializationConfig]):
     dump_kwargs = {}
-    if options:
-        dump_kwargs["default"] = lambda obj: _json_dump_default(obj, options)
-    return json.dumps(data, **dump_kwargs)
+    if config is not None:
+        dump_kwargs["default"] = lambda obj: _json_dump_default(
+            obj, cast(JSONSerializationConfig, config)
+        )
+    return json.dumps(data, **dump_kwargs)  # type: ignore
+
+
+@dataclass(frozen=True)
+class CORSConfig:
+    """CORSConfig configuration."""
+
+    CONTENT_TYPE: ClassVar[List[str]] = ["Content-Type", "Accept"]
+    AUTHORIZATION: ClassVar[List[str]] = ["Authorization"]
+    SIGV4: ClassVar[List[str]] = [
+        "Authorization",
+        "Content-Type",
+        "X-Amz-Date",
+        "X-Amz-Security-Token",
+    ]
+    API_KEY: ClassVar[List[str]] = ["X-Api-Key"]
+
+    @classmethod
+    def is_preflight_request(cls, event: ApiEventType) -> bool:
+        if _get_method(event) != "OPTIONS":
+            return False
+        for header in _get_headers(event):
+            if header.lower() == "access-control-request-method":
+                return True
+        return False
+
+    allow_origin: str
+    allow_methods: Union[str, List[str], Tuple[str, ...]]
+    allow_headers: Union[None, str, List[str], Tuple[str, ...]] = None
+    expose_headers: Union[None, str, List[str], Tuple[str, ...]] = None
+    max_age: Union[None, int, datetime.timedelta] = None
+    allow_credentials: bool = False
+
+    _preflight_headers: Dict[str, str] = dataclass_field(init=False)
+    _headers: Dict[str, str] = dataclass_field(init=False)
+
+    def _update_methods(self):
+        if isinstance(self.allow_methods, str):
+            allow_methods = [self.allow_methods]
+        else:
+            allow_methods = self.allow_methods
+        if "*" in allow_methods:
+            allow_methods = ("*",)
+        elif "OPTIONS" not in allow_methods:
+            allow_methods = ["OPTIONS", *allow_methods]
+        object.__setattr__(self, "allow_methods", tuple(allow_methods))
+
+    def _update_header_field(self, field_name: str):
+        headers = getattr(self, field_name)
+        if not headers:
+            return
+        if isinstance(headers, str):
+            object.__setattr__(self, field_name, (headers,))
+            return
+        names = set()
+        filtered = []
+        for name in headers:
+            if name == "*":
+                object.__setattr__(self, field_name, ("*",))
+                return
+            if name.lower() in names:
+                continue
+            filtered.append(name)
+            names.add(name.lower())
+        object.__setattr__(self, field_name, tuple(filtered))
+
+    def _get_preflight_headers(self) -> Dict[str, str]:
+        headers = {
+            "Access-Control-Allow-Origin": self.allow_origin,
+            "Access-Control-Allow-Methods": ", ".join(self.allow_methods),
+        }
+        if self.allow_headers:
+            headers["Access-Control-Allow-Headers"] = ", ".join(self.allow_headers)
+        if self.max_age is not None:
+            headers["Access-Control-Max-Age"] = str(int(self.max_age.total_seconds()))  # type: ignore
+        if self.allow_credentials is True:
+            headers["Access-Control-Allow-Credentials"] = "true"
+        return headers
+
+    def _get_headers(self) -> Dict[str, str]:
+        headers = {
+            "Access-Control-Allow-Origin": self.allow_origin,
+        }
+        if self.expose_headers:
+            headers["Access-Control-Expose-Headers"] = ", ".join(self.expose_headers)
+        if self.allow_credentials is True:
+            headers["Access-Control-Allow-Credentials"] = "true"
+        return headers
+
+    def __post_init__(self):
+        self._update_methods()
+
+        self._update_header_field("allow_headers")
+
+        self._update_header_field("expose_headers")
+
+        if isinstance(self.max_age, int):
+            object.__setattr__(
+                self, "max_age", datetime.timedelta(seconds=self.max_age)
+            )
+
+        object.__setattr__(self, "_preflight_headers", self._get_preflight_headers())
+        object.__setattr__(self, "_headers", self._get_headers())
+
+    def make_preflight_response(
+        self,
+        *,
+        format_version: Union[FormatVersion, ApiEventType],
+    ) -> ApiResponseType:
+        """Generate a preflight CORSConfig response."""
+
+        return make_response(
+            204,
+            body=None,
+            headers=self._preflight_headers,
+            format_version=format_version,
+        )
+
+    def get_headers(self) -> Dict[str, str]:
+        """Get the configured CORSConfig headers."""
+        return self._headers
 
 
 def make_response(
     status_code: Union[int, http.HTTPStatus],
     body: Optional[Any],
     *,
-    format_version: Union[FormatVersion, Dict],
-    headers: Optional[Dict[str, Union[str, List[str]]]] = None,
+    format_version: Union[FormatVersion, ApiEventType],
+    headers: Optional[LaxHeadersType] = None,
     cookies: Optional[List[str]] = None,
-    json_serialization_options: Optional[JSONSerializationOptions] = None,
-) -> Dict:
+    cors_config: Optional[CORSConfig] = None,
+    json_serialization_config: Optional[JSONSerializationConfig] = None,
+) -> ApiResponseType:
     """Create a response to return from the Lambda function.
 
     This function requires an event format version; this can be provided
@@ -308,7 +432,7 @@ def make_response(
             or as a list of strings.
         cookies (list): Cookies to include in the response, which may not be
             supported by all event format versions.
-        json_serialization_options (JSONSerializationOptions): Override the default
+        json_serialization_config (JSONSerializationConfig): Override the default
             JSON serialization settings
 
     Returns: A dict suitable for returning from the Lambda function.
@@ -317,7 +441,7 @@ def make_response(
         status_code = status_code.value
 
     if not isinstance(format_version, FormatVersion):
-        format_version = get_event_format_version(format_version)
+        format_version: Optional[FormatVersion] = get_event_format_version(format_version)  # type: ignore
 
     if format_version is None:
         raise TypeError("Unknown format version")
@@ -328,7 +452,7 @@ def make_response(
         # TODO: insert into headers?
         raise TypeError(f"Cookies are not supported in format version {format_version}")
 
-    response = {"statusCode": status_code}
+    response: Dict[str, Any] = {"statusCode": status_code}
 
     if body is None:
         response["body"] = ""
@@ -342,20 +466,17 @@ def make_response(
             is_base64_encoded = False
             default_content_type = "text/plain"
         else:
-            if json_serialization_options is None:
-                json_serialization_options = get_default_json_serialization_options()
-            body = _json_dump(body, json_serialization_options)
+            if json_serialization_config is None:
+                json_serialization_config = get_default_json_serialization_config()
+            body = _json_dump(body, json_serialization_config)
             is_base64_encoded = False
             default_content_type = "application/json"
 
         if default_content_type:
-            if headers is None:
-                headers = {}
-            for key in headers:
-                if key.lower() == "content-type":
-                    break
-            else:
-                headers["content-type"] = default_content_type
+            headers = _add_single_header(headers, "Content-Type", default_content_type)
+
+        if cors_config:
+            headers = _add_headers(headers, cors_config.get_headers())
 
         response.update(
             {
@@ -394,10 +515,11 @@ def make_redirect(
     status_code: Union[int, http.HTTPStatus],
     url: str,
     *,
-    format_version: Union[FormatVersion, Dict],
-    headers: Optional[Dict[str, Union[str, List[str]]]] = None,
+    format_version: Union[FormatVersion, ApiEventType],
+    headers: Optional[LaxHeadersType] = None,
     cookies: Optional[List[str]] = None,
-) -> Dict:
+    cors_config: Optional[CORSConfig] = None,
+) -> ApiResponseType:
     """Create a response for a 3XX redirect to return from the Lambda function.
 
     This function requires an event format version; this can be provided
@@ -427,13 +549,14 @@ def make_redirect(
     return make_response(
         status_code,
         body=None,
-        format_version=format_version,
         headers=headers,
         cookies=cookies,
+        cors_config=cors_config,
+        format_version=format_version,
     )
 
 
-def api_event_handler(format_version: str = None):
+def api_event_handler(format_version: FormatVersion = None):
     """Process handler responses and catch APIErrorResponse exceptions.
 
     The return value of the handler is used if it is a dict containing
@@ -517,7 +640,7 @@ class APIErrorResponse(Exception):
     ERROR_MESSAGE: str = NotImplemented
     ERROR_MESSAGE_TEMPLATE: str = NotImplemented
 
-    DECORATOR_LOGGER: Optional[Union[logging.Logger, Callable]] = None
+    DECORATOR_LOGGER: Union[None, logging.Logger, Callable] = None
     DECORATOR_LOGGER_TRACEBACK: bool = False
 
     ERROR_PARENT_FIELD: str = "Error"
@@ -586,31 +709,31 @@ class APIErrorResponse(Exception):
         return error_instance
 
     @classmethod
-    def re_raise_as(
+    def from_exception(
         cls,
         status_code: Union[int, http.HTTPStatus],
+        exc: Exception,
         *,
         internal_message: Optional[str] = None,
-        exc: Optional[Exception] = None,
-    ) -> NoReturn:
-        """Raise an APIErrorResponse using the currently-active or given exception.
+    ) -> "APIErrorResponse":
+        """Create an APIErrorResponse from the given exception.
 
-        This can be used in an except block without explicitly providing the
-        exception; it will get it from sys.exc_info().
-
-        This method creates and raises an APIErrorResponse subclass
+        This method creates an APIErrorResponse subclass
         with the given status code, the error code set to the exception class name,
         and the error message set to the stringified exception.
         If internal_message is not provided, it is set to a string containing
         the error code and error message.
+
+        If the provided exception is an APIErrorResponse subclass,
+        it will be returned as-is
         """
-        if exc is None:
-            exc_info = sys.exc_info()
-            if not exc_info[1]:
-                raise RuntimeError(
-                    "APIErrorResponse.re_raise_as() used without an exception outside an except block"
+        if isinstance(exc, cls):
+            if exc.STATUS_CODE != status_code:
+                raise ValueError(
+                    f"Status code mismatch: {exc.STATUS_CODE} {status_code}"
                 )
-            exc = exc_info[1]
+            return exc
+
         error_code = type(exc).__name__
         error_message = str(exc)
 
@@ -624,51 +747,10 @@ class APIErrorResponse(Exception):
             internal_message=internal_message,
         )
         error_instance = error_class()
-        raise error_instance
+        return error_instance
 
     @classmethod
-    def make_response_from_exception(
-        cls,
-        status_code: Union[int, http.HTTPStatus],
-        exception: Exception,
-        *,
-        format_version: Union[FormatVersion, Dict],
-        headers: Optional[Dict[str, Union[str, List[str]]]] = None,
-        cookies: Optional[List[str]] = None,
-    ) -> Dict:
-        """Create a response based on any Exception.
-
-        If the provided exception is an APIErrorResponse subclass, it must match
-        the provided status code, and the response will come from the
-        get_response() method.
-
-        For all other exceptions, the response body will use the exception type name
-        as the error code, and the stringified exception as the error message.
-        """
-        if isinstance(exception, cls):
-            if exception.STATUS_CODE != status_code:
-                raise ValueError(
-                    f"Status code mismatch: {exception.STATUS_CODE} {status_code}"
-                )
-            return exception.get_response(
-                headers=headers,
-                cookies=cookies,
-                format_version=format_version,
-            )
-        body = cls.make_error_body(
-            code=type(exception).__name__,
-            message=str(exception),
-        )
-        return make_response(
-            status_code=status_code,
-            body=body,
-            headers=headers,
-            cookies=cookies,
-            format_version=format_version,
-        )
-
-    @classmethod
-    def make_error_body(cls, code: str, message: str) -> Dict:
+    def make_error_body(cls, code: str, message: str) -> Dict[str, Any]:
         """Make a response body based on the code and message.
 
         The result is a dict containing the error code under
@@ -683,7 +765,7 @@ class APIErrorResponse(Exception):
 
         Returns: The response body as a dict.
         """
-        body = {}
+        body: Dict[str, Any] = {}
         error_dict = body
         if cls.ERROR_PARENT_FIELD:
             error_dict = {}
@@ -692,7 +774,7 @@ class APIErrorResponse(Exception):
         error_dict[cls.ERROR_MESSAGE_FIELD] = message
         return body
 
-    def __init__(self, internal_message: str, **kwargs):
+    def __init__(self, internal_message: str, **kwargs) -> None:
         """Args:
         internal_message: A message intended for logging.
         **kwargs: Additional data that will be stored in the kwarg attribute.
@@ -753,7 +835,7 @@ class APIErrorResponse(Exception):
             return self.ERROR_MESSAGE_TEMPLATE.format(**template_args)
         return "An error occurred."
 
-    def get_body(self, body: Optional[Any] = None) -> Dict:
+    def get_body(self, body: Optional[Any] = None) -> Any:
         """Get the response body for this exception.
 
         If a body is provided as input, it will be used (this is the behavior
@@ -773,8 +855,8 @@ class APIErrorResponse(Exception):
         return self.make_error_body(error_code, error_message)
 
     def get_headers(
-        self, headers: Optional[Dict[str, Union[str, List[str]]]] = None
-    ) -> Optional[Dict[str, Union[str, List[str]]]]:
+        self, headers: Optional[LaxHeadersType] = None
+    ) -> Optional[LaxHeadersType]:
         """Get the response headers for this exception.
 
         If headers are provided as input, it will be used (this is the behavior
@@ -790,6 +872,18 @@ class APIErrorResponse(Exception):
         if headers is not None:
             return headers
         return None
+
+    def get_default_headers(self) -> LaxHeadersType:
+        """Get default response headers for this exception.
+
+        These headers will be added to the response headers unless they already
+        exist in the headers from get_headers(). This provides a convenient way
+        for subclasses to add default headers to the response.
+
+        Returns: A dictionary of headers, the values of which can be
+            a string or a list of strings.
+        """
+        return {}
 
     def get_cookies(self, cookies: Optional[List[str]] = None) -> Optional[List[str]]:
         """Get the cookies for this exception.
@@ -809,12 +903,13 @@ class APIErrorResponse(Exception):
     def get_response(
         self,
         *,
-        format_version: Union[FormatVersion, Dict],
+        format_version: Union[FormatVersion, ApiEventType],
         body: Optional[Any] = None,
-        headers: Optional[Dict[str, Union[str, List[str]]]] = None,
+        headers: Optional[LaxHeadersType] = None,
         cookies: Optional[List[str]] = None,
-        json_serialization_options: Optional[JSONSerializationOptions] = None,
-    ) -> Dict:
+        json_serialization_config: Optional[JSONSerializationConfig] = None,
+        cors_config: Optional[CORSConfig] = None,
+    ) -> ApiResponseType:
         """Get the response for this exception.
 
         This method requires an event format version; this can be provided
@@ -832,15 +927,22 @@ class APIErrorResponse(Exception):
         Returns: A dict suitable for returning from the Lambda function.
         """
         body = self.get_body(body)
+
         headers = self.get_headers(headers)
+        default_headers = self.get_default_headers()
+        if default_headers:
+            headers = _add_headers(headers, default_headers)
+
         cookies = self.get_cookies(cookies)
+
         return make_response(
             status_code=self.STATUS_CODE,
             body=body,
             headers=headers,
             cookies=cookies,
+            cors_config=cors_config,
+            json_serialization_config=json_serialization_config,
             format_version=format_version,
-            json_serialization_options=json_serialization_options,
         )
 
     def _decorator_log(self):
@@ -874,7 +976,7 @@ class InvalidRequestError(APIErrorResponse):
         internal_message: Optional[str] = None,
         error_code: str = "InvalidRequest",
         **kwargs,
-    ):
+    ) -> None:
         self._error_code = error_code
         self._error_message = error_message
         if internal_message is None:
@@ -891,10 +993,11 @@ class InvalidRequestError(APIErrorResponse):
 def _process_function_result(
     result: Any,
     *,
-    headers: Optional[Dict[str, Union[str, List[str]]]],
+    headers: Optional[LaxHeadersType],
     cookies: Optional[List[str]],
-    format_version: str,
-) -> Dict:
+    cors_config: Optional[CORSConfig],
+    format_version: FormatVersion,
+) -> ApiResponseType:
     """Transform non-response results into responses"""
     if isinstance(result, dict) and "statusCode" in result:
         return result
@@ -907,35 +1010,37 @@ def _process_function_result(
         body=result,
         headers=headers,
         cookies=cookies,
+        cors_config=cors_config,
         format_version=format_version,
     )
 
 
-def _set_context_fields(context):
+@dataclass
+class DecoratorApiResponseConfig:
+    headers: Optional[LaxHeadersType] = None
+    cookies: Optional[List[str]] = None
+    cors_config: Optional[CORSConfig] = None
+
+
+def _set_context_field(context):
     """Attempt to add fields to context object"""
-    if not hasattr(context, "api_response_headers"):
+    if not hasattr(context, "api_response"):
         try:
-            setattr(context, "api_response_headers", None)
-        except:
-            pass
-
-    if not hasattr(context, "api_response_cookies"):
-        try:
-            setattr(context, "api_response_cookies", None)
+            setattr(context, "api_response", DecoratorApiResponseConfig())
         except:
             pass
 
 
-def _get_context_fields(context):
+def _get_context_field(
+    context,
+) -> DecoratorApiResponseConfig:
     """Attempt to retrieve fields from context object"""
-    headers = getattr(context, "api_response_headers", None)
-    cookies = getattr(context, "api_response_cookies", None)
-    return headers, cookies
+    return getattr(context, "api_response", None) or DecoratorApiResponseConfig()
 
 
 def _get_decorator(
     validation_func: Callable,
-    response_format_version: Optional[str] = None,
+    response_format_version: Optional[FormatVersion] = None,
     **decorator_kwargs,
 ):
     def decorator(f):
@@ -952,21 +1057,23 @@ def _get_decorator(
                 _response_format_version = get_event_format_version(event)
             try:
                 validation_func(event, **decorator_kwargs)
-                _set_context_fields(context)
+                _set_context_field(context)
                 result = f(event, context, *args, **kwargs)
-                headers, cookies = _get_context_fields(context)
+                decorator_response_config = _get_context_field(context)
                 return _process_function_result(
                     result,
-                    headers=headers,
-                    cookies=cookies,
+                    headers=decorator_response_config.headers,
+                    cookies=decorator_response_config.cookies,
+                    cors_config=decorator_response_config.cors_config,
                     format_version=_response_format_version,
                 )
             except APIErrorResponse as e:
                 e._decorator_log()
-                headers, cookies = _get_context_fields(context)
+                decorator_response_config = _get_context_field(context)
                 return e.get_response(
-                    headers=headers,
-                    cookies=cookies,
+                    headers=decorator_response_config.headers,
+                    cookies=decorator_response_config.cookies,
+                    cors_config=decorator_response_config.cors_config,
                     format_version=_response_format_version,
                 )
 
@@ -991,7 +1098,7 @@ class PayloadBinaryTypeError(APIErrorResponse):
     ERROR_CODE = "InvalidPayload"
     ERROR_MESSAGE = "The request body is invalid."
 
-    def __init__(self, *, binary_expected: bool, **kwargs):
+    def __init__(self, *, binary_expected: bool, **kwargs) -> None:
         self.binary_expected = binary_expected
 
         if "internal_message" not in kwargs:
@@ -1007,7 +1114,7 @@ class BodyType(enum.Enum):
     bytes = "binary"
 
 
-def get_body(event: Dict, *, type: BodyType = None) -> Union[str, bytes]:
+def get_body(event: ApiEventType, *, type: BodyType = None) -> Union[None, str, bytes]:
     """Retrieve the body from the event, decoding base64-encoded binary bodies.
 
     Args:
@@ -1029,7 +1136,7 @@ def get_body(event: Dict, *, type: BodyType = None) -> Union[str, bytes]:
         raise TypeError(f"Invalid type {type}, must be BodyType")
     format_version = get_event_format_version(event)
     if format_version in [FormatVersion.APIGW_10, FormatVersion.APIGW_20]:
-        body = event.get("body")
+        body: Any = event.get("body")
         if body is None:
             if type == BodyType.bytes:
                 return b""
@@ -1072,7 +1179,7 @@ class PayloadJSONDecodeError(APIErrorResponse):
 
     def __init__(
         self, *, json_decode_error: Union[str, json.JSONDecodeError], **kwargs
-    ):
+    ) -> None:
         self.json_decode_error = json_decode_error
         if "internal_message" not in kwargs:
             kwargs[
@@ -1099,29 +1206,120 @@ class PayloadSchemaViolationError(APIErrorResponse):
     def get_error_message(self) -> str:
         if "error_message" in self.kwargs:
             return self.kwargs["error_message"]
-        return self.validation_error.message
+        return self.validation_error_message
 
     def __init__(
         self,
         *,
         schema: Dict,
-        validation_error: Union[str, "jsonschema.ValidationError"],  # type: ignore
+        validation_error_message: str,
+        validation_error: Union["jsonschema.ValidationError", "fastjsonschema.JsonSchemaException"] = None,  # type: ignore
         **kwargs,
-    ):
+    ) -> None:
         self.schema = schema
+        self.validation_error_message = validation_error_message
         self.validation_error = validation_error
         if "internal_message" not in kwargs:
-            kwargs["internal_message"] = f"Payload violates schema: {validation_error}"
+            kwargs[
+                "internal_message"
+            ] = f"Payload violates schema: {validation_error or validation_error_message}"
         super().__init__(**kwargs)
 
 
 _VALID_JSON_LOADS_TYPES = (str, bytes, bytearray)
 
 
+@dataclass(frozen=True)
+class CompiledFastJSONSchema:
+    """Compiled schema validation for fastjsonschema."""
+
+    schema: Dict
+    compiled_validator: Callable = dataclass_field(init=False)
+
+    def __post_init__(self):
+        try:
+            import fastjsonschema
+        except ModuleNotFoundError:
+            sys.modules["jsonschema"] = None
+            msg = (
+                "Compiled schema validation requires the fastjsonschema package. "
+                + "Install it separately or install the extra as "
+                + "aws-lambda-api-event-utils[fastjsonschema]."
+            )
+            raise ModuleNotFoundError(msg, name="fastjsonschema")
+
+        compiled_validator = fastjsonschema.compile(self.schema)
+        object.__setattr__(self, "compiled_validator", compiled_validator)
+
+    def validate(self, payload: Any):
+        import fastjsonschema
+
+        try:
+            self.compiled_validator(payload)
+        except fastjsonschema.JsonSchemaException as e:
+            raise PayloadSchemaViolationError(
+                validation_error_message=e.message,
+                validation_error=e,
+                schema=self.schema,
+            )
+
+
+def _validate_fastjsonschema(
+    *,
+    payload: Any,
+    schema: Dict,
+):
+    import fastjsonschema
+
+    try:
+        fastjsonschema.validate(schema, payload)
+    except fastjsonschema.JsonSchemaException as e:
+        raise PayloadSchemaViolationError(
+            validation_error_message=e.message, validation_error=e, schema=schema
+        )
+
+
+def _validate_jsonschema(
+    *,
+    payload: Any,
+    schema: Dict,
+):
+    import jsonschema
+
+    try:
+        jsonschema.validate(payload, schema)
+    except jsonschema.ValidationError as e:
+        raise PayloadSchemaViolationError(
+            validation_error_message=e.message, validation_error=e, schema=schema
+        )
+
+
+def _get_schema_validator() -> Callable:
+    try:
+        import fastjsonschema
+
+        return _validate_fastjsonschema
+    except ModuleNotFoundError:
+        sys.modules["fastjsonschema"] = None  # type: ignore
+    try:
+        import jsonschema
+
+        return _validate_jsonschema
+    except ModuleNotFoundError:
+        sys.modules["jsonschema"] = None  # type: ignore
+        msg = (
+            "Schema validation requires either the fastjsonschema or jsonschema packages. "
+            + "Install one separately or install the extra as "
+            + "aws-lambda-api-event-utils[fastjsonschema] or "
+            + "aws-lambda-api-event-utils[jsonschema]."
+        )
+        raise ModuleNotFoundError(msg, name="fastjsonschema")
+
+
 def _parse_and_validate_json_body(
     *,
     body: Union[str, bytes, bytearray],
-    schema: Optional[Dict],
+    schema: Union[None, Dict, CompiledFastJSONSchema],
 ) -> Any:
     try:
         payload = json.loads(body)
@@ -1130,26 +1328,20 @@ def _parse_and_validate_json_body(
 
     # check schema only when body is parsed
     # empty body is allowed by function parameter, not schema
-    if schema is not None:
-        try:
-            import jsonschema
-        except ModuleNotFoundError:
-            msg = (
-                "Schema validation requires the jsonschema package. "
-                + "It can be installed separately or by installing aws-lambda-api-event-utils[jsonschema]."
-            )
-            raise ModuleNotFoundError(msg, name="jsonschema")
+    if schema is None:
+        return payload
 
-        try:
-            jsonschema.validate(payload, schema)
-        except jsonschema.ValidationError as e:
-            raise PayloadSchemaViolationError(validation_error=e, schema=schema)
+    if isinstance(schema, CompiledFastJSONSchema):
+        schema.validate(payload)
+    else:
+        validator = _get_schema_validator()
+        validator(payload=payload, schema=schema)
 
     return payload
 
 
 def _get_json_body(
-    event: Dict,
+    event: ApiEventType,
     *,
     schema: Optional[Dict],
     enforce_content_type: bool,
@@ -1193,7 +1385,7 @@ def _get_json_body(
 
 
 def get_json_body(
-    event: Dict,
+    event: ApiEventType,
     *,
     schema: Optional[Dict] = None,
     enforce_content_type: bool = False,
@@ -1223,7 +1415,7 @@ def get_json_body(
     )
 
 
-def _json_body_decorator_post_parse_hook(event: Dict, payload: Any):
+def _json_body_decorator_post_parse_hook(event: ApiEventType, payload: Any):
     """Update the body in place."""
     format_version = get_event_format_version(event)
     if format_version in [FormatVersion.APIGW_10, FormatVersion.APIGW_20]:
@@ -1275,13 +1467,51 @@ def json_body(
         return decorator
 
 
-def _get_method(event: Dict) -> str:
+def _get_method(event: ApiEventType) -> str:
     """Helper function to extract method without validating."""
     format_version = get_event_format_version(event)
     if format_version == FormatVersion.APIGW_10:
-        event_method = event["httpMethod"]
+        event_method = cast(str, event["httpMethod"])
     elif format_version == FormatVersion.APIGW_20:
-        event_method = event["requestContext"]["http"]["method"]
+        event_method = cast(str, event["requestContext"]["http"]["method"])  # type: ignore
     else:
-        return NotImplementedError
+        raise NotImplementedError
     return event_method
+
+
+def _get_headers(event: ApiEventType) -> Dict[str, str]:
+    format_version = get_event_format_version(event)
+    if format_version == FormatVersion.APIGW_10:
+        return dict(
+            (key.lower(), ",".join(value))
+            for key, value in event["multiValueHeaders"].items()  # type: ignore
+        )
+    elif format_version == FormatVersion.APIGW_20:
+        return cast(Dict[str, str], event["headers"])
+    else:
+        raise NotImplementedError
+
+
+def _add_single_header(
+    headers: Optional[LaxHeadersType], name: str, value: str
+) -> LaxHeadersType:
+    if headers is None:
+        headers = {}
+    for key in headers:
+        if key.lower() == name.lower():
+            break
+    else:
+        headers[name] = value
+    return headers
+
+
+def _add_headers(
+    headers: Optional[LaxHeadersType], headers_to_add: Dict[str, str]
+) -> LaxHeadersType:
+    if headers is None:
+        headers = {}
+    header_keys = set(h.lower() for h in headers)
+    for name, value in headers_to_add.items():
+        if name.lower() not in header_keys:
+            headers[name] = value
+    return headers

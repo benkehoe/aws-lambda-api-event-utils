@@ -33,7 +33,7 @@ def test_validate_content_type():
 
         event = lambda ct: base_event.with_(content_type=ct).get_event()
 
-        with pytest.raises(ContentTypeError, match="Content-Type is missing"):
+        with pytest.raises(ContentTypeError, match="Content-Type is missing") as exc:
             validate_content_type(base_event.get_event(), "application/json")
 
         content_type = validate_content_type(

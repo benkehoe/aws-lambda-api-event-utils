@@ -19,11 +19,13 @@ classifiers = [
 [tool.poetry.dependencies]
 python = "^3.7"
 jsonschema = {version = "^4.2.1", extras = ["jsonschema"]}
+fastjsonschema = {version = "^2.15.3", extras = ["fastjsonschema"]}
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.5"
 black = "^21.12b0"
 requests = "^2.26.0"
+mypy = "^0.931"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
