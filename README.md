@@ -517,11 +517,11 @@ make_response(
 ) -> Dict
 ```
 
-When your function raises an exception that should be turned into a response, but you can't or don't want to modify the code to make that exception an `APIErrorResponse` subclass ([see above](#subclassing-errorresponse) for details), you can use the `APIErrorResponse.from_exception()` class method to create a subclass instance.
-This takes a status code and exception, and creates the error response with the error code set to the exception class name and the error message set to the stringified exception.
-If the exception is an `APIErrorResponse` subclass, the result will be a call to its `get_response()` method, but it will raise an error if the status codes don't match.
-The method signature is as follows:
+If you catch `APIErrorResponse` yourself, you use the `get_response()` method to generate the response to return from the handler.
+The arguments are the same as to `make_response()`, except that status code cannot be provided, as it is fixed by the exception class.
+When `body`, `headers`, or `cookies` are provided, they override the defaults in the exception class.
 
+The signature is as follows:
 ```
 APIErrorResponse.get_response(
     *,
