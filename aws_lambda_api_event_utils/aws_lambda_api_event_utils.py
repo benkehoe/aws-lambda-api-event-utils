@@ -11,7 +11,7 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 
-__version__ = "0.2.0"  # update here and pyproject.toml
+__version__ = "0.3.0"  # update here and pyproject.toml
 
 __all__ = (
     "api_event_handler",
