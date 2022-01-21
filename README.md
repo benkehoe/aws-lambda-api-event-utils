@@ -154,8 +154,8 @@ SCHEMA = {
     },
     "required": ["some_field"]
 }
-# With fastjsonschema, compiled schemas can be used with the
-# CompiledFastJSONSchema class
+# With fastjsonschema, use CompiledFastJSONSchema({ ... }) to
+# compile your schema for faster evaluation
 
 # any decorator from the package provides the base functionality
 # of @api_event_handler
