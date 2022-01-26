@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "aws-lambda-api-event-utils"
-version = "0.3.0"  # update here and aws_lambda_api_event_utils.py
+version = "0.4.0"  # update here and aws_lambda_api_event_utils.py
 description = "Lightweight processing of API events for AWS Lambda"
 authors = ["Ben Kehoe <ben@kehoe.io>"]
 license = "Apache-2.0"

@@ -11,10 +11,12 @@
 # ANY KIND, either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 
-__version__ = "0.3.0"  # update here and pyproject.toml
+__version__ = "0.4.0"  # update here and pyproject.toml
 
 __all__ = (
     "api_event_handler",
+    "append_header",
+    "append_headers",
     "BodyType",
     "CompiledFastJSONSchema",
     "CORSConfig",
@@ -35,6 +37,8 @@ __all__ = (
     "PayloadJSONDecodeError",
     "PayloadSchemaViolationError",
     "set_default_json_serialization_config",
+    "set_header",
+    "set_headers",
 )
 
 import base64
@@ -1515,3 +1519,78 @@ def _add_headers(
         if name.lower() not in header_keys:
             headers[name] = value
     return headers
+
+
+def _append_header_value(
+    existing_value: Union[str, List[str]], value_to_append: Union[str, List[str]]
+) -> Union[str, List[str]]:
+    if isinstance(existing_value, str):
+        existing_value = [existing_value]
+    if isinstance(value_to_append, str):
+        return [*existing_value, value_to_append]
+    else:
+        return [*existing_value, *value_to_append]
+
+
+def set_header(
+    headers: LaxHeadersType,
+    header_name: str,
+    header_value: Union[str, List[str]],
+    *,
+    override: bool,
+) -> Optional[bool]:
+    """Set the given header.
+
+    Returns True if an existing value was kept.
+    Returns False if an existing value was overwritten.
+    Returns None if no existing value was found.
+    """
+    for name in headers.keys():
+        if name.lower() == header_name.lower():
+            if override:
+                headers[name] = header_value
+                return False
+            return True
+    headers[header_name] = header_value
+    return None
+
+
+def set_headers(
+    headers: LaxHeadersType, headers_to_set: LaxHeadersType, *, override: bool
+):
+    """Set the given headers."""
+    header_keys = {h.lower(): h for h in headers}
+    for header_name, header_value in headers_to_set.items():
+        if header_name.lower() not in header_keys:
+            headers[header_name] = header_value
+        elif override:
+            existing_name = header_keys[header_name.lower()]
+            headers[existing_name] = header_value
+
+
+def append_header(
+    headers: LaxHeadersType, header_name: str, header_value: Union[str, List[str]]
+) -> Optional[bool]:
+    """Append the given header.
+
+    Returns True if an existing value was appended to.
+    Returns None if no existing value was found.
+    """
+    for name, value in headers.items():
+        if name.lower() == header_name.lower():
+            headers[name] = _append_header_value(value, header_value)
+            return True
+    headers[header_name] = header_value
+    return None
+
+
+def append_headers(headers: LaxHeadersType, headers_to_append: LaxHeadersType):
+    """Append the given headers."""
+    header_keys = {h.lower(): h for h in headers}
+    for header_name, header_value in headers_to_append.items():
+        if header_name.lower() in header_keys:
+            existing_name = header_keys[header_name.lower()]
+            existing_value = headers[existing_name]
+            headers[existing_name] = _append_header_value(existing_value, header_value)
+        else:
+            headers[header_name] = header_value

@@ -14,6 +14,8 @@
 from .aws_lambda_api_event_utils import (
     __version__,
     api_event_handler,
+    append_header,
+    append_headers,
     BodyType,
     CompiledFastJSONSchema,
     CORSConfig,
@@ -34,6 +36,8 @@ from .aws_lambda_api_event_utils import (
     PayloadJSONDecodeError,
     PayloadSchemaViolationError,
     set_default_json_serialization_config,
+    set_header,
+    set_headers,
 )
 
 from .aws_lambda_api_event_validators import (

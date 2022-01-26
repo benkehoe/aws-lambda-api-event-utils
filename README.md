@@ -468,6 +468,8 @@ raise MyError("secret", error_message="Bad secret.")
 To fully control the headers in the response, override the `get_headers()` method, which takes the headers given to `get_response()` as input.
 To add default headers, override `get_default_headers()`; these headers will be added if they are not already present in the result of `get_headers()`.
 
+Utility functions for managing a header dict where the values may be strings or list of strings are provided as `set_header()`, `set_headers()`, `append_header()` and `append_headers()`.
+
 To control the cookies in the response, override the `get_cookies()` method, which takes the cookies given to `get_response()` as input.
 
 ### Error response body
